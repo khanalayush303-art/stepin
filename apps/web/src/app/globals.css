@@ -1,0 +1,418 @@
+@import "tailwindcss";
+
+/* ============================================================================
+   StepIn design tokens
+   Source of truth: Figma — "Recruitment Platform — Design System"
+   https://www.figma.com/design/1reZHL0SnZoFuAPjwYA98E
+   Every value below mirrors a Figma variable of the same name. Do not add a
+   colour, radius or shadow here that does not exist in that file.
+   ========================================================================= */
+
+/* ---------------------------------------------------------------------------
+   1. Primitives — raw ramps. Never reference these directly in a component.
+   ------------------------------------------------------------------------ */
+:root {
+  --indigo-50: #eef2ff;
+  --indigo-100: #e0e7ff;
+  --indigo-200: #c7d2fe;
+  --indigo-300: #a5b4fc;
+  --indigo-400: #818cf8;
+  --indigo-500: #6366f1;
+  --indigo-600: #4f46e5;
+  --indigo-700: #4338ca;
+  --indigo-800: #3730a3;
+  --indigo-900: #312e81;
+  --indigo-950: #1e1b4b;
+
+  --slate-50: #f8fafc;
+  --slate-100: #f1f5f9;
+  --slate-200: #e2e8f0;
+  --slate-300: #cbd5e1;
+  --slate-400: #94a3b8;
+  --slate-500: #64748b;
+  --slate-600: #475569;
+  --slate-700: #334155;
+  --slate-800: #1e293b;
+  --slate-900: #0f172a;
+  --slate-950: #020617;
+
+  --teal-50: #f0fdfa;
+  --teal-100: #ccfbf1;
+  --teal-200: #99f6e4;
+  --teal-400: #2dd4bf;
+  --teal-500: #14b8a6;
+  --teal-600: #0d9488;
+  --teal-700: #0f766e;
+  --teal-900: #134e4a;
+  --teal-950: #042f2e;
+
+  --green-50: #f0fdf4;
+  --green-100: #dcfce7;
+  --green-400: #4ade80;
+  --green-500: #22c55e;
+  --green-600: #16a34a;
+  --green-700: #15803d;
+  --green-900: #14532d;
+  --green-950: #052e16;
+
+  --amber-50: #fffbeb;
+  --amber-100: #fef3c7;
+  --amber-400: #fbbf24;
+  --amber-500: #f59e0b;
+  --amber-600: #d97706;
+  --amber-700: #b45309;
+  --amber-900: #78350f;
+  --amber-950: #451a03;
+
+  --red-50: #fef2f2;
+  --red-100: #fee2e2;
+  --red-400: #f87171;
+  --red-500: #ef4444;
+  --red-600: #dc2626;
+  --red-700: #b91c1c;
+  --red-900: #7f1d1d;
+  --red-950: #450a0a;
+
+  --blue-50: #eff6ff;
+  --blue-100: #dbeafe;
+  --blue-400: #60a5fa;
+  --blue-500: #3b82f6;
+  --blue-600: #2563eb;
+  --blue-700: #1d4ed8;
+  --blue-900: #1e3a8a;
+  --blue-950: #172554;
+
+  --base-white: #ffffff;
+  --base-black: #000000;
+}
+
+/* ---------------------------------------------------------------------------
+   2. Semantic tokens — Light mode. These are what components consume.
+   ------------------------------------------------------------------------ */
+:root {
+  --sem-background: var(--slate-50);
+  --sem-surface: var(--base-white);
+  --sem-surface-raised: var(--base-white);
+  --sem-card: var(--base-white);
+  --sem-overlay: var(--slate-900);
+
+  --sem-foreground: var(--slate-900);
+  --sem-foreground-secondary: var(--slate-700);
+  --sem-muted: var(--slate-100);
+  /* slate-600, not slate-500: slate-500 on --sem-muted is 4.34:1 and fails AA. */
+  --sem-muted-foreground: var(--slate-600);
+  --sem-on-brand: var(--base-white);
+
+  --sem-border: var(--slate-200);
+  --sem-border-strong: var(--slate-300);
+  --sem-input: var(--slate-300);
+  --sem-ring: var(--indigo-600);
+
+  --sem-primary: var(--indigo-700);
+  --sem-primary-hover: var(--indigo-800);
+  --sem-primary-active: var(--indigo-900);
+  --sem-primary-foreground: var(--base-white);
+  --sem-primary-subtle: var(--indigo-50);
+  --sem-primary-subtle-fg: var(--indigo-800);
+
+  --sem-secondary: var(--slate-100);
+  --sem-secondary-hover: var(--slate-200);
+  --sem-secondary-foreground: var(--slate-900);
+
+  --sem-accent: var(--teal-700);
+  --sem-accent-hover: var(--teal-600);
+  --sem-accent-foreground: var(--base-white);
+  --sem-accent-subtle: var(--teal-50);
+  --sem-accent-subtle-fg: var(--teal-700);
+
+  --sem-success: var(--green-600);
+  --sem-success-subtle: var(--green-50);
+  --sem-success-subtle-fg: var(--green-700);
+
+  --sem-warning: var(--amber-600);
+  --sem-warning-subtle: var(--amber-50);
+  --sem-warning-subtle-fg: var(--amber-700);
+
+  --sem-error: var(--red-600);
+  --sem-error-subtle: var(--red-50);
+  --sem-error-subtle-fg: var(--red-700);
+
+  --sem-info: var(--blue-600);
+  --sem-info-subtle: var(--blue-50);
+  --sem-info-subtle-fg: var(--blue-700);
+}
+
+/* Dark mode — mirrors the Figma "Dark" mode of the Color collection. */
+.dark {
+  --sem-background: var(--slate-950);
+  --sem-surface: var(--slate-900);
+  --sem-surface-raised: var(--slate-800);
+  --sem-card: var(--slate-900);
+  --sem-overlay: var(--base-black);
+
+  --sem-foreground: var(--slate-50);
+  --sem-foreground-secondary: var(--slate-300);
+  --sem-muted: var(--slate-800);
+  --sem-muted-foreground: var(--slate-400);
+  --sem-on-brand: var(--base-white);
+
+  --sem-border: var(--slate-800);
+  --sem-border-strong: var(--slate-700);
+  --sem-input: var(--slate-700);
+  --sem-ring: var(--indigo-400);
+
+  --sem-primary: var(--indigo-500);
+  --sem-primary-hover: var(--indigo-400);
+  --sem-primary-active: var(--indigo-300);
+  --sem-primary-foreground: var(--base-white);
+  --sem-primary-subtle: var(--indigo-950);
+  --sem-primary-subtle-fg: var(--indigo-300);
+
+  --sem-secondary: var(--slate-800);
+  --sem-secondary-hover: var(--slate-700);
+  --sem-secondary-foreground: var(--slate-100);
+
+  --sem-accent: var(--teal-400);
+  --sem-accent-hover: var(--teal-200);
+  --sem-accent-foreground: var(--teal-950);
+  --sem-accent-subtle: var(--teal-950);
+  --sem-accent-subtle-fg: var(--teal-200);
+
+  --sem-success: var(--green-400);
+  --sem-success-subtle: var(--green-950);
+  --sem-success-subtle-fg: var(--green-400);
+
+  --sem-warning: var(--amber-400);
+  --sem-warning-subtle: var(--amber-950);
+  --sem-warning-subtle-fg: var(--amber-400);
+
+  --sem-error: var(--red-400);
+  --sem-error-subtle: var(--red-950);
+  --sem-error-subtle-fg: var(--red-400);
+
+  --sem-info: var(--blue-400);
+  --sem-info-subtle: var(--blue-950);
+  --sem-info-subtle-fg: var(--blue-400);
+}
+
+/* ---------------------------------------------------------------------------
+   3. Theme registration — turns the semantic tokens into Tailwind utilities.
+      `inline` keeps the var() reference live so .dark overrides cascade.
+   ------------------------------------------------------------------------ */
+@theme inline {
+  --color-background: var(--sem-background);
+  --color-surface: var(--sem-surface);
+  --color-surface-raised: var(--sem-surface-raised);
+  --color-card: var(--sem-card);
+  --color-overlay: var(--sem-overlay);
+
+  --color-foreground: var(--sem-foreground);
+  --color-foreground-secondary: var(--sem-foreground-secondary);
+  --color-muted: var(--sem-muted);
+  --color-muted-foreground: var(--sem-muted-foreground);
+  --color-on-brand: var(--sem-on-brand);
+
+  --color-border: var(--sem-border);
+  --color-border-strong: var(--sem-border-strong);
+  --color-input: var(--sem-input);
+  --color-ring: var(--sem-ring);
+
+  --color-primary: var(--sem-primary);
+  --color-primary-hover: var(--sem-primary-hover);
+  --color-primary-active: var(--sem-primary-active);
+  --color-primary-foreground: var(--sem-primary-foreground);
+  --color-primary-subtle: var(--sem-primary-subtle);
+  --color-primary-subtle-fg: var(--sem-primary-subtle-fg);
+
+  --color-secondary: var(--sem-secondary);
+  --color-secondary-hover: var(--sem-secondary-hover);
+  --color-secondary-foreground: var(--sem-secondary-foreground);
+
+  --color-accent: var(--sem-accent);
+  --color-accent-hover: var(--sem-accent-hover);
+  --color-accent-foreground: var(--sem-accent-foreground);
+  --color-accent-subtle: var(--sem-accent-subtle);
+  --color-accent-subtle-fg: var(--sem-accent-subtle-fg);
+
+  --color-success: var(--sem-success);
+  --color-success-subtle: var(--sem-success-subtle);
+  --color-success-subtle-fg: var(--sem-success-subtle-fg);
+
+  --color-warning: var(--sem-warning);
+  --color-warning-subtle: var(--sem-warning-subtle);
+  --color-warning-subtle-fg: var(--sem-warning-subtle-fg);
+
+  --color-error: var(--sem-error);
+  --color-error-subtle: var(--sem-error-subtle);
+  --color-error-subtle-fg: var(--sem-error-subtle-fg);
+
+  --color-info: var(--sem-info);
+  --color-info-subtle: var(--sem-info-subtle);
+  --color-info-subtle-fg: var(--sem-info-subtle-fg);
+}
+
+/* ---------------------------------------------------------------------------
+   4. Type, radius, elevation, layout. Mirrors the Figma Typography / Radius
+      collections and the Elevation effect styles.
+   ------------------------------------------------------------------------ */
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* Type ramp — each pair is font-size / line-height / letter-spacing */
+  --text-display: 3rem;
+  --text-display--line-height: 3.5rem;
+  --text-display--letter-spacing: -0.0208em;
+  --text-display--font-weight: 700;
+
+  --text-h1: 2.25rem;
+  --text-h1--line-height: 2.75rem;
+  --text-h1--letter-spacing: -0.0194em;
+  --text-h1--font-weight: 700;
+
+  --text-h2: 1.875rem;
+  --text-h2--line-height: 2.375rem;
+  --text-h2--letter-spacing: -0.0133em;
+  --text-h2--font-weight: 600;
+
+  --text-h3: 1.5rem;
+  --text-h3--line-height: 2rem;
+  --text-h3--letter-spacing: -0.0083em;
+  --text-h3--font-weight: 600;
+
+  --text-h4: 1.25rem;
+  --text-h4--line-height: 1.75rem;
+  --text-h4--font-weight: 600;
+
+  --text-body-lg: 1.125rem;
+  --text-body-lg--line-height: 1.75rem;
+
+  --text-body: 1rem;
+  --text-body--line-height: 1.5rem;
+
+  --text-small: 0.875rem;
+  --text-small--line-height: 1.25rem;
+
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1rem;
+  --text-caption--letter-spacing: 0.0083em;
+
+  --text-overline: 0.75rem;
+  --text-overline--line-height: 1rem;
+  --text-overline--letter-spacing: 0.0833em;
+  --text-overline--font-weight: 700;
+
+  /* Radius */
+  --radius-none: 0px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 24px;
+  --radius-full: 9999px;
+
+  /* Elevation */
+  --shadow-xs: 0 1px 2px 0 rgb(15 23 42 / 0.06);
+  --shadow-sm: 0 1px 3px 0 rgb(15 23 42 / 0.08), 0 1px 2px -1px rgb(15 23 42 / 0.04);
+  --shadow-md: 0 4px 12px -2px rgb(15 23 42 / 0.08), 0 2px 4px -2px rgb(15 23 42 / 0.04);
+  --shadow-lg: 0 12px 24px -6px rgb(15 23 42 / 0.1), 0 4px 8px -4px rgb(15 23 42 / 0.04);
+  --shadow-xl: 0 24px 48px -12px rgb(15 23 42 / 0.14), 0 8px 16px -8px rgb(15 23 42 / 0.06);
+  --shadow-card-hover: 0 6px 16px -4px rgb(15 23 42 / 0.1), 0 2px 6px -2px rgb(15 23 42 / 0.05);
+
+  /* Layout — container + control heights from the Figma Spacing collection */
+  --container-page: 1280px;
+  --spacing-control-sm: 2.25rem; /* 36px — pointer-dense only */
+  --spacing-control-md: 2.75rem; /* 44px — default, clears WCAG target size */
+  --spacing-control-lg: 3.25rem; /* 52px */
+}
+
+/* ---------------------------------------------------------------------------
+   5. Base layer
+   ------------------------------------------------------------------------ */
+@layer base {
+  *,
+  ::after,
+  ::before {
+    border-color: var(--color-border);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Focus is never removed and never signalled by colour change alone. */
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+
+  /* Respect users who ask for less motion. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer utilities {
+  /* Page container: 1280px max with responsive gutters. */
+  .container-page {
+    width: 100%;
+    max-width: var(--container-page);
+    margin-inline: auto;
+    padding-inline: 1rem;
+  }
+
+  @media (min-width: 640px) {
+    .container-page {
+      padding-inline: 1.5rem;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .container-page {
+      padding-inline: 2.5rem;
+    }
+  }
+
+  /* Visually hidden but available to assistive technology. */
+  .sr-only-focusable:not(:focus):not(:focus-within) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .skeleton {
+    background-color: var(--color-muted);
+    animation: skeleton-pulse 1.6s ease-in-out infinite;
+  }
+
+  @keyframes skeleton-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.55;
+    }
+  }
+}

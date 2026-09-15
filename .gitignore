@@ -1,0 +1,40 @@
+# ------------------------------------------------------------------- Node
+node_modules/
+.next/
+out/
+build/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# --------------------------------------------------------------------- .NET
+bin/
+obj/
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+TestResults/
+.vs/
+
+# ------------------------------------------------------------------ Secrets
+.env
+.env.local
+.env.*.local
+*.pfx
+appsettings.Local.json
+
+# --------------------------------------------------------------------- OS
+.DS_Store
+Thumbs.db
+
+# ------------------------------------------------------------------ Editors
+.idea/
+.vscode/*
+!.vscode/extensions.json

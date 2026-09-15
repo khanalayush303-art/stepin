@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\StepIn.Application\StepIn.Application.csproj" />
+  </ItemGroup>
+
+  <!--
+    ASP.NET Core Identity's full AddIdentity<TUser,TRole>() (SignInManager,
+    cookie schemes) lives in the shared framework, not a standalone NuGet
+    package — a plain class library needs this FrameworkReference to use it.
+    Infrastructure is only ever hosted by StepIn.Api, so this is safe.
+  -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Floating versions: pin these after your first successful restore. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.*" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.*">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.*" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="10.0.*" />
+    <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.*" />
+    <PackageReference Include="MailKit" Version="4.*" />
+  </ItemGroup>
+</Project>

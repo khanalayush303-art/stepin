@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <!-- xunit.v3 deliberately doesn't auto-inject this the way the old xunit v2
+       meta-package did, so every test file would otherwise need its own
+       `using Xunit;`. -->
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\StepIn.Api\StepIn.Api.csproj" />
+  </ItemGroup>
+
+  <!--
+    Serilog's Log.Logger is a process-wide static: two WebApplicationFactory
+    hosts building in parallel (xUnit's default across test classes) race to
+    freeze the same ReloadableLogger and the second throws. Running test
+    collections sequentially avoids it without touching production logging setup.
+  -->
+  <ItemGroup>
+    <None Update="xunit.runner.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Floating versions: pin these after your first successful restore. -->
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.*" />
+    <PackageReference Include="xunit.v3" Version="3.*" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.*" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.*" />
+    <PackageReference Include="FluentAssertions" Version="7.*" />
+    <!-- Real PostgreSQL for the Identity/auth tests, per the Testcontainers convention ApiFactory's own comment anticipates. -->
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.*" />
+  </ItemGroup>
+</Project>

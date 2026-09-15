@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Domain has no dependencies on purpose. Entities and value objects land here
+    from Phase 1 onward; nothing in this project may reference EF Core, ASP.NET
+    or any infrastructure package.
+  -->
+</Project>

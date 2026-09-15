@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\StepIn.Domain\StepIn.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Floating versions: pin these after your first successful restore. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.*" />
+  </ItemGroup>
+</Project>

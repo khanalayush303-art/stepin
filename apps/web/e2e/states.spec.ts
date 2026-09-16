@@ -30,12 +30,6 @@ test("filtering narrows results and can be cleared", async ({ page }) => {
   await expect(page.getByText(/Showing 4 of 5 roles/)).toBeVisible();
 });
 
-test("form validation is announced in text, not colour", async ({ page }) => {
-  await page.goto("/sign-in");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  const alert = page.getByRole("alert").filter({ hasText: /Enter a complete email address/ });
-  await expect(alert).toBeVisible();
-  const input = page.getByLabel("Email address");
-  await expect(input).toHaveAttribute("aria-invalid", "true");
-  await expect(input).toHaveAttribute("aria-describedby", /email-error/);
-});
+// The form this exercised (sign-in) is now Clerk's own <SignIn/> component —
+// its validation markup isn't ours to assert against. Clerk's rendered output
+// is still covered by the WCAG scan in e2e/accessibility.spec.ts.

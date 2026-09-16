@@ -3,12 +3,11 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useClerk, useUser } from "@clerk/nextjs";
 import type { LucideIcon } from "lucide-react";
 import { LogOut } from "lucide-react";
 import { Logo } from "@/components/layout/logo";
 import { Button } from "@/components/ui/button";
-import { logout } from "@/lib/auth/api";
-import { useSession } from "@/lib/auth/session-context";
 import { cn } from "@/lib/utils";
 
 export interface DashboardNavItem {
@@ -29,17 +28,13 @@ export function DashboardShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, refresh } = useSession();
+  const { user } = useUser();
+  const { signOut } = useClerk();
   const [signingOut, setSigningOut] = React.useState(false);
 
   async function onSignOut() {
     setSigningOut(true);
-    try {
-      await logout();
-    } finally {
-      await refresh();
-      router.push("/sign-in");
-    }
+    await signOut(() => router.push("/sign-in"));
   }
 
   return (
@@ -91,9 +86,11 @@ export function DashboardShell({
         <div className="flex items-center justify-between gap-2 border-t border-border p-4">
           <div className="min-w-0">
             <p className="truncate text-small font-medium text-foreground">
-              {user ? `${user.firstName} ${user.lastName}` : "…"}
+              {user ? user.fullName ?? user.firstName : "…"}
             </p>
-            <p className="truncate text-caption text-muted-foreground">{user?.email}</p>
+            <p className="truncate text-caption text-muted-foreground">
+              {user?.primaryEmailAddress?.emailAddress}
+            </p>
           </div>
           <Button
             type="button"

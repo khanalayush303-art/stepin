@@ -13,7 +13,9 @@ WORKDIR /app
 # NEXT_PUBLIC_* values are inlined at build time, so this has to be a build arg
 # rather than a runtime env var.
 ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:5080
+ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL \
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY \
     NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .

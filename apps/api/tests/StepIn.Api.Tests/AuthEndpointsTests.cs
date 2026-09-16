@@ -1,185 +1,42 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using System.Security.Claims;
-using System.Text.RegularExpressions;
 using FluentAssertions;
-using Microsoft.AspNetCore.Authorization;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using StepIn.Api.Endpoints;
+using StepIn.Domain.Common;
+using StepIn.Infrastructure.Persistence;
 
 namespace StepIn.Api.Tests;
 
 /// <summary>
-/// Exercises Identity-backed auth against a real, ephemeral PostgreSQL
-/// container (<see cref="AuthApiFactory"/>) — registration, login, email
-/// verification, password reset and role authorization are all persistence
-/// behavior, not pure wiring, so <see cref="ApiFactory"/>'s unreachable
-/// database isn't sufficient here. Requires a running Docker daemon.
+/// Exercises the real Clerk-token-validation → user-sync → authorization
+/// pipeline against a real, ephemeral PostgreSQL container
+/// (<see cref="AuthApiFactory"/>) — <see cref="ApiFactory"/>'s unreachable
+/// database only tests wiring, which isn't enough for persistence-backed
+/// behavior like sync idempotency. Tokens are locally signed
+/// (<see cref="AuthApiFactory.IssueToken"/>) rather than issued by a real
+/// Clerk tenant, since there is no Clerk application configured in CI — the
+/// real validation/claims-transformation code still runs, only the signing
+/// key is substituted. Requires a running Docker daemon.
 /// </summary>
 public sealed class AuthEndpointsTests(AuthApiFactory factory) : IClassFixture<AuthApiFactory>
 {
     private readonly AuthApiFactory _factory = factory;
-
-    private static RegisterRequest NewApplicant(string email) =>
-        new(email, "Correct-Horse-1", "Correct-Horse-1", "Ada", "Lovelace", "Applicant");
 
     private HttpClient CreateClient() => _factory.CreateClient();
 
     private static void UseFetchHeader(HttpRequestMessage request) =>
         request.Headers.Add("X-Requested-With", "fetch");
 
-    private static (string Email, string Token) ExtractLinkParams(string htmlBody)
-    {
-        var emailMatch = Regex.Match(htmlBody, "email=([^&\"]+)");
-        var tokenMatch = Regex.Match(htmlBody, "token=([^&\"]+)");
-        return (Uri.UnescapeDataString(emailMatch.Groups[1].Value), Uri.UnescapeDataString(tokenMatch.Groups[1].Value));
-    }
+    private static void Authorize(HttpRequestMessage request, string token) =>
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-    private async Task<string> RegisterAndVerifyAsync(HttpClient client, string email, CancellationToken cancellationToken)
-    {
-        (await client.PostAsJsonAsync("/api/v1/auth/register", NewApplicant(email), cancellationToken)).EnsureSuccessStatusCode();
-
-        var sent = _factory.EmailSender.LastMessageTo(email);
-        sent.Should().NotBeNull("registration should send a verification email");
-
-        var (linkEmail, token) = ExtractLinkParams(sent!.HtmlBody);
-
-        var verifyResponse = await client.PostAsJsonAsync(
-            "/api/v1/auth/verify-email",
-            new VerifyEmailRequest(linkEmail, token),
-            cancellationToken);
-        verifyResponse.EnsureSuccessStatusCode();
-
-        return token;
-    }
-
-    // ----------------------------------------------------------- register ---
+    // ---------------------------------------------------------------- /me ---
 
     [Fact]
-    public async Task Register_creates_the_account_and_sends_a_verification_email()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        using var client = CreateClient();
-        var email = $"{Guid.NewGuid()}@example.com";
-
-        var response = await client.PostAsJsonAsync("/api/v1/auth/register", NewApplicant(email), ct);
-
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
-        _factory.EmailSender.LastMessageTo(email).Should().NotBeNull();
-    }
-
-    [Fact]
-    public async Task Register_rejects_a_duplicate_email()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        using var client = CreateClient();
-        var email = $"{Guid.NewGuid()}@example.com";
-
-        (await client.PostAsJsonAsync("/api/v1/auth/register", NewApplicant(email), ct)).EnsureSuccessStatusCode();
-        var second = await client.PostAsJsonAsync("/api/v1/auth/register", NewApplicant(email), ct);
-
-        second.StatusCode.Should().Be(HttpStatusCode.Conflict);
-    }
-
-    [Fact]
-    public async Task Register_rejects_a_weak_password()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        using var client = CreateClient();
-        var request = NewApplicant($"{Guid.NewGuid()}@example.com") with { Password = "weak", ConfirmPassword = "weak" };
-
-        var response = await client.PostAsJsonAsync("/api/v1/auth/register", request, ct);
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-    }
-
-    [Fact]
-    public async Task Register_rejects_mismatched_password_confirmation()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        using var client = CreateClient();
-        var request = NewApplicant($"{Guid.NewGuid()}@example.com") with { ConfirmPassword = "Different-Horse-1" };
-
-        var response = await client.PostAsJsonAsync("/api/v1/auth/register", request, ct);
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-    }
-
-    [Fact]
-    public async Task Register_rejects_a_self_assigned_admin_role()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        using var client = CreateClient();
-        var request = NewApplicant($"{Guid.NewGuid()}@example.com") with { Role = "Admin" };
-
-        var response = await client.PostAsJsonAsync("/api/v1/auth/register", request, ct);
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-    }
-
-    // -------------------------------------------------------------- login ---
-
-    [Fact]
-    public async Task Login_fails_with_a_generic_message_for_an_unknown_email()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        using var client = CreateClient();
-
-        var response = await client.PostAsJsonAsync(
-            "/api/v1/auth/login",
-            new LoginRequest($"{Guid.NewGuid()}@example.com", "whatever"),
-            ct);
-
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task Login_fails_before_email_verification()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        using var client = CreateClient();
-        var email = $"{Guid.NewGuid()}@example.com";
-        (await client.PostAsJsonAsync("/api/v1/auth/register", NewApplicant(email), ct)).EnsureSuccessStatusCode();
-
-        var response = await client.PostAsJsonAsync("/api/v1/auth/login", new LoginRequest(email, "Correct-Horse-1"), ct);
-
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-    }
-
-    [Fact]
-    public async Task Login_fails_with_a_generic_message_for_the_wrong_password()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        using var client = CreateClient();
-        var email = $"{Guid.NewGuid()}@example.com";
-        await RegisterAndVerifyAsync(client, email, ct);
-
-        var response = await client.PostAsJsonAsync("/api/v1/auth/login", new LoginRequest(email, "Wrong-Password-1"), ct);
-
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task Login_succeeds_after_verification_and_me_reflects_the_account()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        using var client = CreateClient();
-        var email = $"{Guid.NewGuid()}@example.com";
-        await RegisterAndVerifyAsync(client, email, ct);
-
-        var loginResponse = await client.PostAsJsonAsync("/api/v1/auth/login", new LoginRequest(email, "Correct-Horse-1"), ct);
-        loginResponse.EnsureSuccessStatusCode();
-
-        var me = await client.GetFromJsonAsync<CurrentUserResponse>("/api/v1/auth/me", ct);
-
-        me.Should().NotBeNull();
-        me!.Email.Should().Be(email);
-        me.Role.Should().Be("Applicant");
-        me.EmailConfirmed.Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task Me_requires_authentication()
+    public async Task Me_without_a_token_is_unauthorized()
     {
         var ct = TestContext.Current.CancellationToken;
         using var client = CreateClient();
@@ -189,217 +46,244 @@ public sealed class AuthEndpointsTests(AuthApiFactory factory) : IClassFixture<A
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    // --------------------------------------------------------------------- ---
+    [Fact]
+    public async Task Me_with_a_garbage_token_is_unauthorized()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/auth/me");
+        Authorize(request, "not-a-real-token");
+
+        var response = await client.SendAsync(request, ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
 
     [Fact]
-    public async Task Logout_requires_the_fetch_header_and_ends_the_session()
+    public async Task Me_with_an_expired_token_is_unauthorized()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var token = AuthApiFactory.IssueToken(
+            $"user_{Guid.NewGuid():N}", $"{Guid.NewGuid()}@example.com", expires: DateTime.UtcNow.AddMinutes(-5));
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/auth/me");
+        Authorize(request, token);
+
+        var response = await client.SendAsync(request, ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task Me_with_a_token_from_an_unauthorized_party_is_rejected()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var token = AuthApiFactory.IssueToken(
+            $"user_{Guid.NewGuid():N}", $"{Guid.NewGuid()}@example.com", azp: "https://evil.example.com");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/auth/me");
+        Authorize(request, token);
+
+        var response = await client.SendAsync(request, ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task Me_with_a_valid_token_syncs_and_returns_the_application_user()
     {
         var ct = TestContext.Current.CancellationToken;
         using var client = CreateClient();
         var email = $"{Guid.NewGuid()}@example.com";
-        await RegisterAndVerifyAsync(client, email, ct);
-        (await client.PostAsJsonAsync("/api/v1/auth/login", new LoginRequest(email, "Correct-Horse-1"), ct)).EnsureSuccessStatusCode();
+        var token = AuthApiFactory.IssueToken($"user_{Guid.NewGuid():N}", email, "Ada", "Lovelace");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/auth/me");
+        Authorize(request, token);
 
-        var withoutHeader = await client.PostAsync("/api/v1/auth/logout", content: null, ct);
-        withoutHeader.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var response = await client.SendAsync(request, ct);
 
-        using var logoutRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/logout");
-        UseFetchHeader(logoutRequest);
-        (await client.SendAsync(logoutRequest, ct)).EnsureSuccessStatusCode();
-
-        var afterLogout = await client.GetAsync("/api/v1/auth/me", ct);
-        afterLogout.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    // --------------------------------------------------------- verification ---
-
-    [Fact]
-    public async Task Verify_email_rejects_a_reused_token()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        using var client = CreateClient();
-        var email = $"{Guid.NewGuid()}@example.com";
-        var token = await RegisterAndVerifyAsync(client, email, ct);
-
-        var replay = await client.PostAsJsonAsync("/api/v1/auth/verify-email", new VerifyEmailRequest(email, token), ct);
-
-        // Already-verified is reported as a (harmless) success, not replay of the original grant.
-        replay.EnsureSuccessStatusCode();
-        var body = await replay.Content.ReadAsStringAsync(ct);
-        body.Should().Contain("already verified");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadFromJsonAsync<CurrentUserResponse>(ct);
+        body!.Email.Should().Be(email);
+        body.FirstName.Should().Be("Ada");
+        body.LastName.Should().Be("Lovelace");
+        body.Role.Should().BeNull();
+        body.EmailVerified.Should().BeTrue();
     }
 
     [Fact]
-    public async Task Verify_email_rejects_a_garbage_token()
+    public async Task Repeated_authentication_for_the_same_clerk_user_does_not_create_duplicate_rows()
     {
         var ct = TestContext.Current.CancellationToken;
         using var client = CreateClient();
-        var email = $"{Guid.NewGuid()}@example.com";
-        (await client.PostAsJsonAsync("/api/v1/auth/register", NewApplicant(email), ct)).EnsureSuccessStatusCode();
-
-        var response = await client.PostAsJsonAsync("/api/v1/auth/verify-email", new VerifyEmailRequest(email, "not-a-real-token"), ct);
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-    }
-
-    [Fact]
-    public async Task Resend_verification_is_generic_for_an_unknown_email()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        using var client = CreateClient();
-
-        var response = await client.PostAsJsonAsync(
-            "/api/v1/auth/resend-verification",
-            new ResendVerificationRequest($"{Guid.NewGuid()}@example.com"),
-            ct);
-
-        response.EnsureSuccessStatusCode();
-    }
-
-    // ------------------------------------------------------- password reset ---
-
-    [Fact]
-    public async Task Forgot_password_does_not_send_an_email_for_an_unknown_account()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        using var client = CreateClient();
+        var clerkUserId = $"user_{Guid.NewGuid():N}";
         var email = $"{Guid.NewGuid()}@example.com";
 
-        var response = await client.PostAsJsonAsync("/api/v1/auth/forgot-password", new ForgotPasswordRequest(email), ct);
-
-        response.EnsureSuccessStatusCode();
-        _factory.EmailSender.LastMessageTo(email).Should().BeNull();
-    }
-
-    [Fact]
-    public async Task Reset_password_end_to_end_replaces_the_password()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        using var client = CreateClient();
-        var email = $"{Guid.NewGuid()}@example.com";
-        await RegisterAndVerifyAsync(client, email, ct);
-
-        (await client.PostAsJsonAsync("/api/v1/auth/forgot-password", new ForgotPasswordRequest(email), ct)).EnsureSuccessStatusCode();
-        var sent = _factory.EmailSender.LastMessageTo(email);
-        sent.Should().NotBeNull();
-        var (linkEmail, token) = ExtractLinkParams(sent!.HtmlBody);
-
-        var resetResponse = await client.PostAsJsonAsync(
-            "/api/v1/auth/reset-password",
-            new ResetPasswordRequest(linkEmail, token, "New-Correct-Horse-2", "New-Correct-Horse-2"),
-            ct);
-        resetResponse.EnsureSuccessStatusCode();
-
-        (await client.PostAsJsonAsync("/api/v1/auth/login", new LoginRequest(email, "Correct-Horse-1"), ct))
-            .StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-
-        (await client.PostAsJsonAsync("/api/v1/auth/login", new LoginRequest(email, "New-Correct-Horse-2"), ct))
-            .IsSuccessStatusCode.Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task Reset_password_rejects_an_invalid_token()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        using var client = CreateClient();
-        var email = $"{Guid.NewGuid()}@example.com";
-        await RegisterAndVerifyAsync(client, email, ct);
-
-        var response = await client.PostAsJsonAsync(
-            "/api/v1/auth/reset-password",
-            new ResetPasswordRequest(email, "not-a-real-token", "New-Correct-Horse-2", "New-Correct-Horse-2"),
-            ct);
-
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-    }
-
-    // ------------------------------------------------------- account setup ---
-
-    [Fact]
-    public async Task Account_setup_switches_role_and_requires_the_fetch_header()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        using var client = CreateClient();
-        var email = $"{Guid.NewGuid()}@example.com";
-        await RegisterAndVerifyAsync(client, email, ct);
-        (await client.PostAsJsonAsync("/api/v1/auth/login", new LoginRequest(email, "Correct-Horse-1"), ct)).EnsureSuccessStatusCode();
-
-        using var withoutHeader = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/account-setup")
+        async Task<Guid> FetchIdAsync()
         {
-            Content = JsonContent.Create(new AccountSetupRequest("Recruiter")),
-        };
-        (await client.SendAsync(withoutHeader, ct)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            var token = AuthApiFactory.IssueToken(clerkUserId, email);
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/auth/me");
+            Authorize(request, token);
+            var response = await client.SendAsync(request, ct);
+            var body = await response.Content.ReadFromJsonAsync<CurrentUserResponse>(ct);
+            return body!.Id;
+        }
 
-        using var withHeader = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/account-setup")
-        {
-            Content = JsonContent.Create(new AccountSetupRequest("Recruiter")),
-        };
-        UseFetchHeader(withHeader);
-        (await client.SendAsync(withHeader, ct)).EnsureSuccessStatusCode();
+        var firstId = await FetchIdAsync();
+        var secondId = await FetchIdAsync();
+        var thirdId = await FetchIdAsync();
 
-        var me = await client.GetFromJsonAsync<CurrentUserResponse>("/api/v1/auth/me", ct);
-        me!.Role.Should().Be("Recruiter");
+        firstId.Should().Be(secondId).And.Be(thirdId);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var matchCount = await db.Users.CountAsync(u => u.ClerkUserId == clerkUserId, ct);
+        matchCount.Should().Be(1);
     }
 
     [Fact]
-    public async Task Account_setup_rejects_an_admin_role()
+    public async Task Two_different_clerk_users_never_share_an_application_user()
     {
         var ct = TestContext.Current.CancellationToken;
         using var client = CreateClient();
-        var email = $"{Guid.NewGuid()}@example.com";
-        await RegisterAndVerifyAsync(client, email, ct);
-        (await client.PostAsJsonAsync("/api/v1/auth/login", new LoginRequest(email, "Correct-Horse-1"), ct)).EnsureSuccessStatusCode();
 
+        async Task<Guid> RegisterAsync()
+        {
+            var token = AuthApiFactory.IssueToken($"user_{Guid.NewGuid():N}", $"{Guid.NewGuid()}@example.com");
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/auth/me");
+            Authorize(request, token);
+            var response = await client.SendAsync(request, ct);
+            var body = await response.Content.ReadFromJsonAsync<CurrentUserResponse>(ct);
+            return body!.Id;
+        }
+
+        (await RegisterAsync()).Should().NotBe(await RegisterAsync());
+    }
+
+    // --------------------------------------------------------- account setup ---
+
+    [Fact]
+    public async Task Account_setup_rejects_an_invalid_role()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var token = AuthApiFactory.IssueToken($"user_{Guid.NewGuid():N}", $"{Guid.NewGuid()}@example.com");
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/account-setup")
         {
             Content = JsonContent.Create(new AccountSetupRequest("Admin")),
         };
+        Authorize(request, token);
         UseFetchHeader(request);
 
-        (await client.SendAsync(request, ct)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var response = await client.SendAsync(request, ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
-    // ---------------------------------------------------------------- misc ---
-
-    [Fact]
-    public async Task Password_policy_reports_the_server_enforced_rules()
+    [Theory]
+    [InlineData("Applicant", "/dashboard")]
+    [InlineData("Recruiter", "/recruiter")]
+    public async Task Account_setup_sets_the_role_and_returns_the_right_dashboard(string role, string expectedRedirect)
     {
         var ct = TestContext.Current.CancellationToken;
         using var client = CreateClient();
+        var clerkUserId = $"user_{Guid.NewGuid():N}";
+        var email = $"{Guid.NewGuid()}@example.com";
+        var token = AuthApiFactory.IssueToken(clerkUserId, email);
 
-        var policy = await client.GetFromJsonAsync<PasswordPolicyResponse>("/api/v1/auth/password-policy", ct);
+        using var setupRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/account-setup")
+        {
+            Content = JsonContent.Create(new AccountSetupRequest(role)),
+        };
+        Authorize(setupRequest, token);
+        UseFetchHeader(setupRequest);
+        var setupResponse = await client.SendAsync(setupRequest, ct);
 
-        policy.Should().NotBeNull();
-        policy!.RequiredLength.Should().Be(8);
-        policy.RequireDigit.Should().BeTrue();
-        policy.RequireUppercase.Should().BeTrue();
+        setupResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var setupBody = await setupResponse.Content.ReadFromJsonAsync<Dictionary<string, string>>(ct);
+        setupBody!["redirectTo"].Should().Be(expectedRedirect);
+
+        using var meRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/auth/me");
+        Authorize(meRequest, AuthApiFactory.IssueToken(clerkUserId, email));
+        var meResponse = await client.SendAsync(meRequest, ct);
+        var meBody = await meResponse.Content.ReadFromJsonAsync<CurrentUserResponse>(ct);
+        meBody!.Role.Should().Be(role);
     }
 
     [Fact]
-    public async Task Google_challenge_reports_not_implemented_when_unconfigured()
+    public async Task Account_setup_without_a_token_is_unauthorized()
     {
         var ct = TestContext.Current.CancellationToken;
         using var client = CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/account-setup")
+        {
+            Content = JsonContent.Create(new AccountSetupRequest("Applicant")),
+        };
+        UseFetchHeader(request);
 
-        var response = await client.GetAsync("/api/v1/auth/external/google", ct);
+        var response = await client.SendAsync(request, ct);
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    // ------------------------------------------------------- role policies ---
+
+    [Fact]
+    public async Task Role_policy_rejects_a_user_without_the_required_role()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var token = await IssueTokenWithRoleAsync(UserRole.Applicant, ct);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/test/recruiter-only");
+        Authorize(request, token);
+
+        var response = await client.SendAsync(request, ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
 
     [Fact]
-    public async Task Role_policies_gate_by_role_and_nothing_else()
+    public async Task Role_policy_allows_a_user_with_the_required_role()
     {
-        using var scope = _factory.Services.CreateScope();
-        var authorizationService = scope.ServiceProvider.GetRequiredService<IAuthorizationService>();
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var token = await IssueTokenWithRoleAsync(UserRole.Recruiter, ct);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/test/recruiter-only");
+        Authorize(request, token);
 
-        var applicant = new ClaimsPrincipal(new ClaimsIdentity(
-            [new Claim(ClaimTypes.Role, "Applicant")], authenticationType: "Test"));
+        var response = await client.SendAsync(request, ct);
 
-        (await authorizationService.AuthorizeAsync(applicant, "RequireApplicant")).Succeeded.Should().BeTrue();
-        (await authorizationService.AuthorizeAsync(applicant, "RequireRecruiter")).Succeeded.Should().BeFalse();
-        (await authorizationService.AuthorizeAsync(applicant, "RequireAdmin")).Succeeded.Should().BeFalse();
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
 
-        var anonymous = new ClaimsPrincipal(new ClaimsIdentity());
-        (await authorizationService.AuthorizeAsync(anonymous, "RequireApplicant")).Succeeded.Should().BeFalse();
+    [Fact]
+    public async Task Role_policy_rejects_a_user_with_no_role_set_yet()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var token = AuthApiFactory.IssueToken($"user_{Guid.NewGuid():N}", $"{Guid.NewGuid()}@example.com");
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/test/applicant-only");
+        Authorize(request, token);
+
+        var response = await client.SendAsync(request, ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    /// <summary>Completes account-setup for a fresh Clerk identity, then re-issues a token for the same identity.</summary>
+    private async Task<string> IssueTokenWithRoleAsync(UserRole role, CancellationToken ct)
+    {
+        using var client = CreateClient();
+        var clerkUserId = $"user_{Guid.NewGuid():N}";
+        var email = $"{Guid.NewGuid()}@example.com";
+
+        using var setupRequest = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/account-setup")
+        {
+            Content = JsonContent.Create(new AccountSetupRequest(role.ToString())),
+        };
+        Authorize(setupRequest, AuthApiFactory.IssueToken(clerkUserId, email));
+        UseFetchHeader(setupRequest);
+        (await client.SendAsync(setupRequest, ct)).EnsureSuccessStatusCode();
+
+        return AuthApiFactory.IssueToken(clerkUserId, email);
     }
 }

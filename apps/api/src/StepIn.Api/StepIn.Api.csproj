@@ -14,7 +14,7 @@
     <PackageReference Include="Swashbuckle.AspNetCore.SwaggerUI" Version="9.*" />
     <PackageReference Include="Serilog.AspNetCore" Version="9.*" />
     <PackageReference Include="Serilog.Sinks.Console" Version="6.*" />
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.Google" Version="10.0.*" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.*" />
     <!-- Required by the dotnet-ef tool when this project is used as the startup project; Infrastructure's own reference is PrivateAssets=all so it doesn't flow here transitively. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.*">
       <PrivateAssets>all</PrivateAssets>

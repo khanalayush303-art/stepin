@@ -1,26 +1,20 @@
-using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using StepIn.Application.Common.Interfaces;
-using StepIn.Infrastructure.Email;
-using StepIn.Infrastructure.Identity;
 using StepIn.Infrastructure.Persistence;
 using StepIn.Infrastructure.Services;
 
 namespace StepIn.Infrastructure;
 
 /// <summary>
-/// Composition root for the infrastructure layer: PostgreSQL, EF Core, Identity
-/// and the concrete implementations of the application layer's abstractions.
+/// Composition root for the infrastructure layer: PostgreSQL, EF Core, and the
+/// concrete implementations of the application layer's abstractions.
 /// </summary>
 public static class DependencyInjection
 {
     public const string ConnectionStringName = "Postgres";
-
-    private const string EmailConfirmationTokenProviderName = "EmailConfirmation";
-    private const string PasswordResetTokenProviderName = "PasswordReset";
 
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services,
@@ -59,43 +53,6 @@ public static class DependencyInjection
                 failureStatus: HealthStatus.Unhealthy,
                 tags: ["ready", "db"]);
 
-        AddIdentity(services);
-
-        services.Configure<SmtpOptions>(configuration.GetSection(SmtpOptions.SectionName));
-        services.AddScoped<IEmailSender, SmtpEmailSender>();
-
         return services;
-    }
-
-    private static void AddIdentity(IServiceCollection services)
-    {
-        services.Configure<EmailConfirmationTokenProviderOptions>(options =>
-            options.TokenLifespan = TimeSpan.FromHours(24));
-        services.Configure<PasswordResetTokenProviderOptions>(options =>
-            options.TokenLifespan = TimeSpan.FromHours(1));
-
-        services
-            .AddIdentity<ApplicationUser, IdentityRole<Guid>>(options =>
-            {
-                options.Password.RequiredLength = 8;
-                options.Password.RequireDigit = true;
-                options.Password.RequireLowercase = true;
-                options.Password.RequireUppercase = true;
-                options.Password.RequireNonAlphanumeric = true;
-
-                options.Lockout.MaxFailedAccessAttempts = 5;
-                options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
-                options.Lockout.AllowedForNewUsers = true;
-
-                options.User.RequireUniqueEmail = true;
-                options.SignIn.RequireConfirmedEmail = true;
-
-                options.Tokens.EmailConfirmationTokenProvider = EmailConfirmationTokenProviderName;
-                options.Tokens.PasswordResetTokenProvider = PasswordResetTokenProviderName;
-            })
-            .AddEntityFrameworkStores<ApplicationDbContext>()
-            .AddDefaultTokenProviders()
-            .AddTokenProvider<EmailConfirmationTokenProvider<ApplicationUser>>(EmailConfirmationTokenProviderName)
-            .AddTokenProvider<PasswordResetTokenProvider<ApplicationUser>>(PasswordResetTokenProviderName);
     }
 }

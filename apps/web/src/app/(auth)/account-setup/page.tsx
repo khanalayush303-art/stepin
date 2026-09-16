@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
@@ -14,7 +15,6 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Alert } from "@/components/ui/alert";
-import { useSession } from "@/lib/auth/session-context";
 import { completeAccountSetup } from "@/lib/auth/api";
 import { formError } from "@/lib/auth/client";
 import { cn } from "@/lib/utils";
@@ -23,34 +23,23 @@ const STEPS = ["Confirm your account type", "What you're after", "Notifications"
 
 export default function AccountSetupPage() {
   const router = useRouter();
-  const { status, user, refresh } = useSession();
+  const { getToken } = useAuth();
   const [step, setStep] = React.useState(0);
-  const [manualRole, setManualRole] = React.useState<"Applicant" | "Recruiter" | null>(null);
-  const role = manualRole ?? (user && user.role !== "Admin" ? user.role : "Applicant");
+  const [role, setRole] = React.useState<"Applicant" | "Recruiter">("Applicant");
   const [submitting, setSubmitting] = React.useState(false);
   const [serverError, setServerError] = React.useState<string>();
-
-  React.useEffect(() => {
-    if (status === "unauthenticated") {
-      router.replace("/sign-in?returnTo=/account-setup");
-    }
-  }, [status, router]);
 
   async function onFinish() {
     setServerError(undefined);
     setSubmitting(true);
     try {
-      const result = await completeAccountSetup(role);
-      await refresh();
+      const token = await getToken();
+      const result = await completeAccountSetup(token, role);
       router.push(result.redirectTo);
     } catch (error) {
       setServerError(formError(error));
       setSubmitting(false);
     }
-  }
-
-  if (status === "loading" || status === "unauthenticated") {
-    return null;
   }
 
   return (
@@ -104,7 +93,7 @@ export default function AccountSetupPage() {
                 type="button"
                 role="radio"
                 aria-checked={role === value}
-                onClick={() => setManualRole(value)}
+                onClick={() => setRole(value)}
                 className={cn(
                   "h-control-sm flex-1 rounded-sm text-small transition-colors",
                   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",

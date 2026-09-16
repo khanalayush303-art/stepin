@@ -24,5 +24,6 @@ public sealed class ApiFactory : WebApplicationFactory<Program>
             "ConnectionStrings:Postgres",
             "Host=127.0.0.1;Port=59999;Database=stepin_test;Username=stepin;Password=stepin;Timeout=1;Command Timeout=1");
         builder.UseSetting("Cors:AllowedOrigins:0", "http://localhost:3000");
+        builder.UseSetting("Clerk:Authority", "https://test.clerk.accounts.dev");
     }
 }

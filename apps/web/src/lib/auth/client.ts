@@ -1,8 +1,8 @@
 /**
- * Thin fetch wrapper for the auth API. Always same-origin (see next.config.ts
- * rewrites) and always `credentials: "include"` so the HttpOnly session
- * cookie rides along — there is no token for this client to hold, in memory
- * or otherwise.
+ * Thin fetch wrapper for the two endpoints ASP.NET Core still owns. Always
+ * same-origin (see next.config.ts rewrites) and always carries the caller's
+ * Clerk session token as a Bearer header — there is no cookie or client-held
+ * token beyond what Clerk's own SDK manages.
  */
 
 export interface ProblemDetails {
@@ -24,15 +24,12 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, token: string | null, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
-    credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      // Cheap CSRF defense-in-depth the backend's RequireFetchHeaderFilter
-      // checks on state-changing endpoints; harmless elsewhere.
-      "X-Requested-With": "fetch",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...init?.headers,
     },
   });
@@ -48,28 +45,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const apiClient = {
-  get: <T>(path: string): Promise<T> => request<T>(path, { method: "GET" }),
-  post: <T>(path: string, data?: unknown): Promise<T> =>
-    request<T>(path, {
+  post: <T>(path: string, token: string | null, data?: unknown): Promise<T> =>
+    request<T>(path, token, {
       method: "POST",
       body: data === undefined ? undefined : JSON.stringify(data),
     }),
 };
-
-/** Pulls the first field-level error for `field`, falling back to the problem's title. */
-export function fieldError(error: unknown, field: string): string | undefined {
-  if (!(error instanceof ApiError)) return undefined;
-  const fieldErrors = error.problem.errors?.[field] ?? error.problem.errors?.[capitalize(field)];
-  return fieldErrors?.[0];
-}
 
 export function formError(error: unknown): string {
   if (error instanceof ApiError) {
     return error.problem.detail ?? error.problem.title ?? "Something went wrong. Try again.";
   }
   return "We couldn't reach the server. Check your connection and try again.";
-}
-
-function capitalize(value: string): string {
-  return value.length === 0 ? value : value[0].toUpperCase() + value.slice(1);
 }

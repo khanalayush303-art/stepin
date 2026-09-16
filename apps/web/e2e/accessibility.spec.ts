@@ -10,11 +10,9 @@ const ROUTES = [
   "/about",
   "/sign-in",
   "/register",
-  "/forgot-password",
-  "/reset-password?email=test%40example.com&token=sample-token",
-  "/verify-email?email=student%40example.com",
-  // /dashboard, /recruiter, /admin and /account-setup require a signed-in
-  // session (see proxy.ts) — covered by e2e/auth.spec.ts instead.
+  // forgot-password/reset-password/verify-email redirect to /sign-in; /dashboard,
+  // /recruiter, /admin and /account-setup require a signed-in session — both
+  // covered by e2e/auth.spec.ts instead.
 ];
 
 for (const route of ROUTES) {

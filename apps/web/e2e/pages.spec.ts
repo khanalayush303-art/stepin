@@ -9,12 +9,10 @@ const PAGES = [
   { path: "/about", heading: "About StepIn" },
   { path: "/sign-in", heading: "Welcome back" },
   { path: "/register", heading: "Create your account" },
-  { path: "/forgot-password", heading: "Reset your password" },
-  // A bare /reset-password has no token, so it's an invalid-link state.
-  { path: "/reset-password?email=test%40example.com&token=sample-token", heading: "Choose a new password" },
-  { path: "/verify-email", heading: "Check your email" },
-  // /dashboard, /recruiter and /admin are protected routes (see proxy.ts),
-  // covered by e2e/auth.spec.ts instead of this public-heading list.
+  // forgot-password/reset-password/verify-email now redirect to /sign-in
+  // (Clerk owns those flows); /dashboard, /recruiter, /admin and
+  // /account-setup are protected routes — both covered by e2e/auth.spec.ts
+  // instead of this public-heading list.
 ];
 
 test.describe("every route renders with exactly one h1", () => {
@@ -23,7 +21,11 @@ test.describe("every route renders with exactly one h1", () => {
       const response = await browserPage.goto(page.path);
       expect(response?.status(), `${page.path} should return 200`).toBe(200);
 
-      const h1 = browserPage.locator("h1");
+      // :visible, not a plain "h1" count — Clerk's own (hidden) heading inside
+      // its sign-in/sign-up card is intentionally suppressed via display:none
+      // rather than removed from the DOM, and a hidden heading is correctly
+      // invisible to assistive tech too, so it shouldn't count against this.
+      const h1 = browserPage.locator("h1:visible");
       await expect(h1).toHaveCount(1);
       await expect(h1).toContainText(page.heading);
 

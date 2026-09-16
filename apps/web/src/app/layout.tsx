@@ -1,8 +1,9 @@
 import type { Metadata, Viewport } from "next";
+import { ClerkProvider } from "@clerk/nextjs";
 import "@fontsource-variable/inter";
 import "./globals.css";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { SessionProvider } from "@/lib/auth/session-context";
+import { clerkAppearance } from "@/lib/auth/clerk-appearance";
 
 export const metadata: Metadata = {
   title: {
@@ -27,9 +28,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en-AU" suppressHydrationWarning>
       <body style={{ ["--font-inter" as string]: "'Inter Variable'" }}>
-        <SessionProvider>
+        <ClerkProvider appearance={clerkAppearance}>
           <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
-        </SessionProvider>
+        </ClerkProvider>
       </body>
     </html>
   );

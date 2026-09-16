@@ -1,32 +1,26 @@
-using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using StepIn.Application.Common.Interfaces;
 using StepIn.Domain.Common;
-using StepIn.Infrastructure.Identity;
+using StepIn.Domain.Users;
 
 namespace StepIn.Infrastructure.Persistence;
 
-/// <summary>
-/// The single EF Core context for the platform, and the Identity store for
-/// <see cref="ApplicationUser"/>/<see cref="IdentityRole{TKey}"/>.
-///
-/// Later phases add their own <c>DbSet</c> and an <c>IEntityTypeConfiguration</c>
-/// beside it.
-/// </summary>
+/// <summary>The single EF Core context for the platform.</summary>
 public sealed class ApplicationDbContext(
     DbContextOptions<ApplicationDbContext> options,
     IDateTimeProvider clock)
-    : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>(options), IApplicationDbContext
+    : DbContext(options), IApplicationDbContext
 {
     /// <summary>All tables live under this schema rather than <c>public</c>.</summary>
     public const string Schema = "stepin";
 
+    public DbSet<ApplicationUser> Users => Set<ApplicationUser>();
+
+    IQueryable<ApplicationUser> IApplicationDbContext.Users => Users;
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
-
-        base.OnModelCreating(modelBuilder);
 
         modelBuilder.HasDefaultSchema(Schema);
 
@@ -71,23 +65,6 @@ public sealed class ApplicationDbContext(
                     break;
                 case EntityState.Modified:
                     entry.Entity.MarkUpdated(now);
-                    break;
-                default:
-                    break;
-            }
-        }
-
-        // ApplicationUser can't inherit the Domain Entity base (it already
-        // inherits IdentityUser<Guid>), so it's stamped separately here.
-        foreach (var entry in ChangeTracker.Entries<ApplicationUser>())
-        {
-            switch (entry.State)
-            {
-                case EntityState.Added:
-                    entry.Entity.CreatedAt = now;
-                    break;
-                case EntityState.Modified:
-                    entry.Entity.UpdatedAt = now;
                     break;
                 default:
                     break;

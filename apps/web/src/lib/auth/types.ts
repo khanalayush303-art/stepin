@@ -11,17 +11,9 @@ export interface AuthUser {
   email: string;
   firstName: string;
   lastName: string;
-  role: UserRole;
-  emailConfirmed: boolean;
+  role: UserRole | null;
+  emailVerified: boolean;
   accountStatus: string;
-}
-
-export interface PasswordPolicy {
-  requiredLength: number;
-  requireDigit: boolean;
-  requireLowercase: boolean;
-  requireUppercase: boolean;
-  requireNonAlphanumeric: boolean;
 }
 
 export function dashboardPathForRole(role: UserRole): string {

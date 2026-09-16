@@ -38,21 +38,9 @@ services:
       ASPNETCORE_HTTP_PORTS: 8080
       ConnectionStrings__Postgres: "Host=db;Port=5432;Database=${POSTGRES_DB:-stepin};Username=${POSTGRES_USER:-stepin};Password=${POSTGRES_PASSWORD:-stepin}"
       Cors__AllowedOrigins__0: ${WEB_ORIGIN:-http://localhost:3000}
-      # Real SMTP relay for verification/reset emails — any provider's relay works unchanged.
-      Smtp__Host: ${SMTP_HOST:-}
-      Smtp__Port: ${SMTP_PORT:-587}
-      Smtp__Username: ${SMTP_USERNAME:-}
-      Smtp__Password: ${SMTP_PASSWORD:-}
-      Smtp__UseStartTls: ${SMTP_USE_STARTTLS:-true}
-      Smtp__FromAddress: ${SMTP_FROM_ADDRESS:-no-reply@stepin.local}
-      Smtp__FromName: ${SMTP_FROM_NAME:-StepIn}
-      # Google OAuth is inert until both are set (see .env.example).
-      Google__ClientId: ${GOOGLE_CLIENT_ID:-}
-      Google__ClientSecret: ${GOOGLE_CLIENT_SECRET:-}
-      # Dev-only, opt-in local admin account. Never set these in a real deployment.
-      Seed__DevAdmin__Enabled: ${DEV_ADMIN_ENABLED:-false}
-      Seed__DevAdmin__Email: ${DEV_ADMIN_EMAIL:-}
-      Seed__DevAdmin__Password: ${DEV_ADMIN_PASSWORD:-}
+      # Clerk Frontend API domain — used for JWKS discovery only, not a secret.
+      Clerk__Authority: ${CLERK_AUTHORITY:-}
+      Clerk__AuthorizedParties__0: ${WEB_ORIGIN:-http://localhost:3000}
     ports:
       - "${API_PORT:-5080}:8080"
     healthcheck:
@@ -68,6 +56,8 @@ services:
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:5080}
+        # Baked into the client bundle like NEXT_PUBLIC_API_BASE_URL — it's public by design.
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-}
     container_name: stepin-web
     restart: unless-stopped
     depends_on:
@@ -79,6 +69,9 @@ services:
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:5080}
       # Server-side calls stay on the compose network.
       API_INTERNAL_BASE_URL: http://api:8080
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-}
+      # Runtime-only — never a build arg, so it can never end up in the client bundle.
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
     ports:
       - "${WEB_PORT:-3000}:3000"
 

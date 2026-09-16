@@ -1,13 +1,9 @@
-using System.Threading.RateLimiting;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using StepIn.Api.Endpoints;
 using StepIn.Api.Infrastructure;
 using StepIn.Application;
 using StepIn.Infrastructure;
-using StepIn.Infrastructure.Identity;
 using StepIn.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -31,7 +27,7 @@ builder.Host.UseSerilog((context, services, configuration) => configuration
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddFrontendCors(builder.Configuration);
-builder.Services.AddStepInAuthentication(builder.Configuration, builder.Environment);
+builder.Services.AddClerkAuthentication(builder.Configuration);
 
 builder.Services.AddProblemDetails(options =>
 {
@@ -40,24 +36,10 @@ builder.Services.AddProblemDetails(options =>
 });
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
-builder.Services.AddOpenApi("v1");
+builder.Services.AddOpenApi("v1", options => options.AddDocumentTransformer<BearerSecuritySchemeTransformer>());
 
 builder.Services.AddRequestTimeouts();
 builder.Services.AddResponseCompression();
-
-builder.Services.AddRateLimiter(options =>
-{
-    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.AddPolicy(AuthEndpoints.RateLimitPolicyName, httpContext =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-            factory: _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = 10,
-                Window = TimeSpan.FromMinutes(1),
-                QueueLimit = 0,
-            }));
-});
 
 var app = builder.Build();
 
@@ -84,7 +66,6 @@ if (!app.Environment.IsDevelopment())
 app.UseResponseCompression();
 app.UseCors(CorsSetup.PolicyName);
 app.UseRequestTimeouts();
-app.UseRateLimiter();
 
 app.UseAuthentication();
 app.UseAuthorization();
@@ -105,11 +86,19 @@ app.MapAuthEndpoints();
 
 app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
 
+// Testing-only: proves the role policies actually gate access. Never present
+// in Development/Production — there's nothing else in Phase 1 that uses them yet.
+if (app.Environment.IsEnvironment("Testing"))
+{
+    app.MapGet("/api/v1/test/applicant-only", () => Results.Ok()).RequireAuthorization("RequireApplicant").ExcludeFromDescription();
+    app.MapGet("/api/v1/test/recruiter-only", () => Results.Ok()).RequireAuthorization("RequireRecruiter").ExcludeFromDescription();
+    app.MapGet("/api/v1/test/admin-only", () => Results.Ok()).RequireAuthorization("RequireAdmin").ExcludeFromDescription();
+}
+
 // --------------------------------------------------------------- startup ---
 try
 {
     await ApplyMigrationsAsync(app);
-    await SeedIdentityAsync(app);
     Log.Information("StepIn API starting in {Environment}", app.Environment.EnvironmentName);
     await app.RunAsync();
 }
@@ -155,33 +144,6 @@ static async Task ApplyMigrationsAsync(WebApplication app)
     catch (Exception ex)
     {
         Log.Warning(ex, "Could not reach PostgreSQL at startup; /health/ready will report unhealthy");
-    }
-}
-
-// Seeds the three platform roles (and, opt-in only, one local dev admin) on
-// boot. Development-only, for the same reason migrations are: in any other
-// environment this is a deploy step, not a startup side effect.
-static async Task SeedIdentityAsync(WebApplication app)
-{
-    if (!app.Environment.IsDevelopment())
-    {
-        return;
-    }
-
-    using var scope = app.Services.CreateScope();
-
-    try
-    {
-        var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
-        await RoleSeeder.SeedAsync(roleManager);
-
-        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-        await DevAdminSeeder.SeedAsync(app.Environment, app.Configuration, userManager, logger);
-    }
-    catch (Exception ex)
-    {
-        Log.Warning(ex, "Could not seed Identity roles/dev admin at startup");
     }
 }
 

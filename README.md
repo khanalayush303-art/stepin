@@ -14,19 +14,20 @@ professional development.
 
 ## Phase status
 
-This repository is at **Phase 0 — Foundation**.
+This repository is at **Phase 1 — Authentication**.
 
-| Delivered in Phase 0 | Deliberately not here yet |
+| Delivered | Deliberately not here yet |
 | --- | --- |
-| Design system (Figma + code tokens) | Real authentication, Google OAuth, password reset logic |
-| Reusable component library | Profile / job / application CRUD |
-| Public page shells, auth screens, three dashboards | Resume uploads, matching, messaging, interviews |
-| Backend skeleton: DI, config, EF Core, PostgreSQL, OpenAPI, CORS, problem details, structured logging, health probes | Any business entity or endpoint |
-| Docker Compose for web + api + database | Admin moderation logic, notifications |
-| Frontend e2e + accessibility tests, backend xUnit wiring tests | — |
+| Design system (Figma + code tokens), reusable component library | Profile / job / application CRUD |
+| Public page shells, three dashboards | Resume uploads, matching, messaging, interviews |
+| Backend skeleton: DI, config, EF Core, PostgreSQL, OpenAPI, CORS, problem details, structured logging, health probes | Any business entity or endpoint beyond the user record auth needs |
+| **Real authentication via [Clerk](#authentication-clerk)** — sign-up/sign-in/Google/email verification/password reset, server-verified sessions, an application-level `Users` table keyed to the Clerk identity, and role-gated dashboards | Admin moderation logic, notifications |
+| Docker Compose for web + api + database | — |
+| Frontend e2e + accessibility tests, backend xUnit wiring + auth tests | — |
 
-Every screen you can click today renders from `apps/web/src/lib/placeholder-data.ts`.
-That file is isolated on purpose and is deleted, not migrated, when the API lands.
+Every dashboard's *content* still renders from `apps/web/src/lib/placeholder-data.ts` —
+only who's allowed to see it is real. That file is isolated on purpose and is
+deleted, not migrated, when the underlying entities land.
 
 ---
 
@@ -64,24 +65,25 @@ stepin/
 │   ├── web/                        Next.js frontend
 │   │   ├── src/app/
 │   │   │   ├── (marketing)/        Home, Jobs, Internships, Companies, How it works, About
-│   │   │   ├── (auth)/             Sign in, Register, Forgot/Reset password, Verify, Setup
-│   │   │   ├── (app)/              Applicant, Recruiter and Admin dashboards
+│   │   │   ├── (auth)/             Sign in / Register (Clerk), account setup
+│   │   │   ├── (app)/              Applicant, Recruiter and Admin dashboards — role-gated layouts
 │   │   │   └── globals.css         Design tokens — mirrors Figma
 │   │   ├── src/components/
 │   │   │   ├── ui/                 Primitives: button, input, badge, card, dialog, …
 │   │   │   ├── layout/             Header, footer, page header, logo
 │   │   │   ├── jobs/               Job card, company card, filters, status indicator
-│   │   │   ├── dashboard/          Dashboard shell, stat card
-│   │   │   └── auth/               Google button, auth divider
+│   │   │   └── dashboard/          Dashboard shell, stat card
+│   │   ├── src/lib/auth/           Clerk-appearance mapping, server-side role lookup, the /account-setup API call
 │   │   ├── src/lib/                Types, utils, filter builders, Phase 0 fixtures
-│   │   └── e2e/                    Playwright: pages, navigation, states, accessibility
+│   │   ├── src/proxy.ts            Clerk middleware (identity only — role checks live in each layout)
+│   │   └── e2e/                    Playwright: pages, navigation, states, accessibility, auth
 │   │
 │   └── api/                        ASP.NET Core Web API (clean architecture)
-│       ├── src/StepIn.Domain/          Entities and value objects. Zero dependencies.
+│       ├── src/StepIn.Domain/          Entities and value objects. Zero dependencies. Includes ApplicationUser.
 │       ├── src/StepIn.Application/     Use cases and abstractions. No EF Core.
 │       ├── src/StepIn.Infrastructure/  EF Core, PostgreSQL, concrete services.
-│       ├── src/StepIn.Api/             Host: pipeline, endpoints, OpenAPI, health.
-│       └── tests/StepIn.Api.Tests/     xUnit wiring tests over the real pipeline.
+│       ├── src/StepIn.Api/             Host: pipeline, Clerk JWT validation, endpoints, OpenAPI, health.
+│       └── tests/StepIn.Api.Tests/     xUnit wiring + auth tests over the real pipeline.
 │
 ├── docker-compose.yml
 └── .env.example
@@ -124,7 +126,9 @@ cp .env.example .env
 ```
 
 `.env` is git-ignored. Every value in the example is a local-development default
-and safe to share; nothing in this repository contains a real secret.
+and safe to share; nothing in this repository contains a real secret — including
+the Clerk keys, which are a syntactically-valid placeholder, not a working
+credential (see [Authentication](#authentication-clerk) below).
 
 ### Everything at once
 
@@ -180,13 +184,15 @@ dotnet run --project src/StepIn.Api    # http://localhost:5080
 
 ### Database migrations
 
-No migrations exist yet, because Phase 0 has no entities. When the first entity
-lands:
+One migration exists (`InitialCreate`): a single `stepin."Users"` table —
+`Id`, `ClerkUserId` (unique), `Email` (unique), `FirstName`, `LastName`, `Role`
+(nullable until account setup), `AccountStatus`, `CreatedAt`, `UpdatedAt`. To add
+another migration once a later phase adds entities:
 
 ```bash
 cd apps/api
 dotnet tool install --global dotnet-ef       # once
-dotnet ef migrations add InitialCreate \
+dotnet ef migrations add SomeChange \
   --project src/StepIn.Infrastructure \
   --startup-project src/StepIn.Api
 dotnet ef database update \
@@ -197,6 +203,71 @@ dotnet ef database update \
 Migrations are applied automatically **in Development only**. In any other
 environment applying them is a deploy step — two instances racing to migrate the
 same database is not a failure mode worth inviting.
+
+---
+
+## Authentication (Clerk)
+
+**Clerk is the only authentication provider.** It owns credentials, sessions,
+Google sign-in, email verification and password reset — none of that is
+implemented in this codebase. ASP.NET Core's job is authorization: it validates
+the Clerk-issued token on every request, and is the source of truth for the
+platform's own roles (`Applicant` / `Recruiter` / `Admin`), which Clerk has no
+concept of.
+
+```
+Clerk (hosted)
+   │  Authorization: Bearer <session token>
+   ▼
+Next.js  ──same-origin /api rewrite──▶  ASP.NET Core  ──▶  PostgreSQL
+(ClerkProvider,                         (JWT Bearer against            (Users table:
+ useAuth/useUser,                        Clerk's JWKS; no                ClerkUserId,
+ auth.protect() per layout)              secret key needed)              Role, ...)
+```
+
+- **User sync is lazy, not webhook-based.** The first authenticated request for
+  a new Clerk identity creates its `Users` row automatically
+  (`ClerkUserSyncClaimsTransformation`); every later request reuses it. There is
+  no `user.created` webhook to configure.
+- **Route protection lives in each route group's `layout.tsx`**, not in
+  middleware — Clerk deprecated middleware-based path matching
+  (`createRouteMatcher`) in favor of per-page/layout checks, and this repo
+  follows that guidance. `src/proxy.ts` only makes Clerk's auth state available;
+  it doesn't decide anything.
+- **Promoting an Admin** has no UI by design — do it directly once the person
+  has signed up at least once:
+  ```bash
+  psql "$DATABASE_URL" -c "UPDATE stepin.\"Users\" SET \"Role\" = 'Admin' WHERE \"ClerkUserId\" = 'user_xxx';"
+  ```
+
+### Local setup
+
+1. Create a free application at <https://dashboard.clerk.com>.
+2. Enable Google under **Configure → SSO connections** if you want it — this is
+   entirely Clerk-side; nothing in this repo's code changes.
+3. Copy three values into `.env`:
+   ```env
+   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
+   CLERK_SECRET_KEY=sk_test_...
+   CLERK_AUTHORITY=https://your-app.clerk.accounts.dev
+   ```
+   (`CLERK_AUTHORITY` is the same "Frontend API" domain Clerk shows you, used
+   only for JWKS discovery — it is not a secret.)
+
+### Troubleshooting
+
+- **The app won't boot / throws about a missing publishable key.**
+  `@clerk/nextjs` refuses to render at all without a *syntactically* valid key —
+  `.env.example`'s placeholder satisfies the format check so the app boots, but
+  it is not a real credential.
+- **Sign-in/sign-up pages load, but nothing works, or Clerk's SDK logs a
+  network error.** That's the placeholder key: it decodes to a Frontend API
+  domain (`example.clerk.accounts.dev`) that doesn't correspond to a real
+  Clerk application, so Clerk's own edge rejects it. Replace it with your real
+  key from step 3 above.
+- **A dashboard redirects back to `/sign-in` in a loop.** Almost always means
+  the API is unreachable from the frontend — check `docker compose logs api`
+  and that `Clerk:Authority` is set there too.
 
 ---
 
@@ -211,14 +282,22 @@ npm run test:e2e -- --project=desktop
 npm run test:e2e:ui       # interactive
 ```
 
-Playwright starts its own production server on port 3100. Four suites:
+Playwright starts its own production server on port 3100. Five suites:
 
-- `pages.spec.ts` — every route returns 200, has exactly one `<h1>`, and does not scroll horizontally at any viewport.
+- `pages.spec.ts` — every public route returns 200, has exactly one `<h1>`, and does not scroll horizontally at any viewport.
 - `navigation.spec.ts` — nav reaches each surface, `aria-current` marks the active route, the skip link is first in the tab order.
-- `states.spec.ts` — loading, empty and error states; filtering and clearing; form validation announced in text.
-- `accessibility.spec.ts` — axe-core against WCAG 2.1 A and AA on 11 routes.
+- `states.spec.ts` — loading, empty and error states; filtering and clearing.
+- `accessibility.spec.ts` — axe-core against WCAG 2.1 A and AA on the public + sign-in/register routes.
+- `auth.spec.ts` — `/dashboard`, `/recruiter`, `/admin` and `/account-setup` redirect an unauthenticated visitor to sign-in; the old forgot-password/reset-password/verify-email URLs redirect there too.
 
 Projects run at 1440px (desktop), 834px (tablet) and a Pixel 7 profile (mobile).
+
+**This suite needs a real Clerk key to fully pass** (see
+[Authentication](#authentication-clerk)) — with only the placeholder key,
+Clerk's client bootstrap makes a real request to its own edge for every page
+(not just auth pages) and gets rejected, so every route 400s in a real browser
+even though `next build`/`lint`/`typecheck` all stay green. This is inherent to
+Clerk, not a bug here.
 
 The presentation states are reachable by hand too: `/jobs?state=loading`,
 `?state=empty`, `?state=error`.
@@ -230,11 +309,13 @@ cd apps/api
 dotnet test
 ```
 
-Covers the wiring Phase 0 is actually about: liveness stays healthy when
-PostgreSQL is down, readiness returns 503 and names the failing check, the
-OpenAPI document is served and contains the expected paths, CORS allows the
-configured origin and refuses an unknown one, and an unknown route returns
-`application/problem+json` rather than an HTML error page.
+`HealthEndpointTests`/`ApiContractTests` cover the wiring: liveness stays
+healthy when PostgreSQL is down, readiness returns 503 and names the failing
+check, the OpenAPI document is served, CORS behaves, and an unknown route
+returns `application/problem+json`. `AuthEndpointsTests` covers the real
+Clerk-token-validation → user-sync → role-policy pipeline against a locally
+signed token (shaped like Clerk's) and a real, ephemeral PostgreSQL container
+via Testcontainers — **this half requires a running Docker daemon.**
 
 ---
 
@@ -275,17 +356,22 @@ commit.
 ## Security
 
 - No secrets in the repository. `.env` is git-ignored; `.env.example` holds local defaults only.
+- No password ever touches this codebase — Clerk owns credentials entirely, and `CLERK_SECRET_KEY` never reaches the browser.
+- The API trusts nothing a client sends about who it is; it only trusts the identity inside a Clerk token it has independently validated against Clerk's JWKS.
 - CORS origins are configuration, never a wildcard.
 - Error responses carry a trace id, not a stack trace, outside Development.
 - The API container runs as a non-root user; the web container runs as `nextjs`.
 
 ---
 
-## What Phase 1 picks up
+## What Phase 2 picks up
 
-Authentication and identity: ASP.NET Core Identity, the credential and Google
-OAuth flows behind the screens that already exist, email verification and
-password reset, and the first real entities with their migrations.
+The applicant profile (education, experience, projects, skills,
+certifications), jobs, applications, and the business logic behind the
+dashboards that currently render placeholder data. Authorization for all of it
+builds on the role already established in this phase — `RequireApplicant` /
+`RequireRecruiter` / `RequireAdmin` policies exist and are tested, just not yet
+consumed by any endpoint.
 
 The design system, component library, page shells, pipeline and container setup
 should not need to change to accommodate any of it.

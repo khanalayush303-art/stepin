@@ -239,6 +239,11 @@ Next.js  ──same-origin /api rewrite──▶  ASP.NET Core  ──▶  Postg
   ```bash
   psql "$DATABASE_URL" -c "UPDATE stepin.\"Users\" SET \"Role\" = 'Admin' WHERE \"ClerkUserId\" = 'user_xxx';"
   ```
+- **`WEB_ORIGIN` (→ `Clerk:AuthorizedParties`) must equal the real frontend
+  origin wherever the API is deployed.** The API checks a token's `azp` claim
+  against this allow-list and rejects anything else with 401 — a token from
+  `https://your-app.vercel.app` is correctly refused if the API still only
+  trusts `http://localhost:3000`.
 
 ### Local setup
 
@@ -297,7 +302,10 @@ Projects run at 1440px (desktop), 834px (tablet) and a Pixel 7 profile (mobile).
 Clerk's client bootstrap makes a real request to its own edge for every page
 (not just auth pages) and gets rejected, so every route 400s in a real browser
 even though `next build`/`lint`/`typecheck` all stay green. This is inherent to
-Clerk, not a bug here.
+Clerk, not a bug here. Confirmed green (93 passed, 3 pre-existing skips, all
+three viewports, including the WCAG scan against Clerk's real rendered
+sign-in/sign-up) once a real key from your own Clerk application is in
+`.env.local`.
 
 The presentation states are reachable by hand too: `/jobs?state=loading`,
 `?state=empty`, `?state=error`.

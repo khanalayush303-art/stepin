@@ -93,6 +93,12 @@ Dependencies point inward only: `Api → Infrastructure → Application → Doma
 `Domain` references nothing, and `Application` never sees EF Core — the seam is
 `IApplicationDbContext`, which exposes the unit of work and nothing else.
 
+For the request-by-request detail behind this diagram (how a Bearer token
+actually gets from the browser to Postgres, and why each layer exists), see
+[docs/architecture/architecture.md](docs/architecture/architecture.md). For a
+dedicated record of what Phase 1 delivered and how it was verified, see
+[docs/phases/phase-1-authentication.md](docs/phases/phase-1-authentication.md).
+
 ---
 
 ## Technology

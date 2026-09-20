@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import {
@@ -47,6 +48,28 @@ const NOTIFICATION_TONE = {
   error: "text-error",
 } as const;
 
+// Based on the viewer's local hour, not the server's — a static default here
+// would be wrong for anyone outside the deploy region's timezone.
+function greetingForHour(hour: number): string {
+  if (hour >= 5 && hour < 12) return "Good morning";
+  if (hour >= 12 && hour < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+// useSyncExternalStore, not useState+useEffect: this is React's own primitive
+// for "the value differs between server and client snapshots" — it renders
+// the server snapshot for the initial/hydration pass (avoiding a mismatch)
+// and swaps to the real client value right after, with no extra render pass.
+function subscribeNever() {
+  return () => {};
+}
+function getServerGreeting() {
+  return "Good morning";
+}
+function getClientGreeting() {
+  return greetingForHour(new Date().getHours());
+}
+
 export default function ApplicantDashboardPage() {
   const { user } = useUser();
   const active = APPLICATIONS[0];
@@ -55,12 +78,14 @@ export default function ApplicantDashboardPage() {
   const completion = 60;
   const displayName = user?.fullName ?? user?.firstName ?? "there";
 
+  const greeting = React.useSyncExternalStore(subscribeNever, getClientGreeting, getServerGreeting);
+
   return (
     <DashboardShell nav={NAV} navLabel="Applicant dashboard">
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="space-y-1">
-            <h1 className="text-h2 text-foreground">Good morning, {user?.firstName ?? "there"}</h1>
+            <h1 className="text-h2 text-foreground">{greeting}, {user?.firstName ?? "there"}</h1>
             <p className="text-body text-muted-foreground">
               You have 2 interviews this week and 3 roles closing soon.
             </p>

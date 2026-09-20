@@ -53,7 +53,8 @@ const NOTIFICATION_TONE = {
 function greetingForHour(hour: number): string {
   if (hour >= 5 && hour < 12) return "Good morning";
   if (hour >= 12 && hour < 17) return "Good afternoon";
-  return "Good evening";
+  if (hour >= 17 && hour < 24) return "Good evening";
+  return "Welcome back";
 }
 
 // useSyncExternalStore, not useState+useEffect: this is React's own primitive

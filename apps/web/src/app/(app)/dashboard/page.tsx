@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useUser } from "@clerk/nextjs";
 import {
   BadgeCheck,
   Bell,
@@ -47,17 +48,19 @@ const NOTIFICATION_TONE = {
 } as const;
 
 export default function ApplicantDashboardPage() {
+  const { user } = useUser();
   const active = APPLICATIONS[0];
   const recent = APPLICATIONS.slice(1);
   const recommended = JOBS.slice(4, 7);
   const completion = 60;
+  const displayName = user?.fullName ?? user?.firstName ?? "there";
 
   return (
     <DashboardShell nav={NAV} navLabel="Applicant dashboard">
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="space-y-1">
-            <h1 className="text-h2 text-foreground">Good morning, Ayush</h1>
+            <h1 className="text-h2 text-foreground">Good morning, {user?.firstName ?? "there"}</h1>
             <p className="text-body text-muted-foreground">
               You have 2 interviews this week and 3 roles closing soon.
             </p>
@@ -69,7 +72,7 @@ export default function ApplicantDashboardPage() {
                 Find roles
               </Link>
             </Button>
-            <Avatar name="Ayush Khanal" />
+            <Avatar name={displayName} src={user?.imageUrl} />
           </div>
         </div>
 

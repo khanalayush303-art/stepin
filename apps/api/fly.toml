@@ -1,0 +1,26 @@
+# Fly.io app configuration for the StepIn API.
+# Builds from the existing apps/api/Dockerfile — no separate build config needed.
+app = 'stepin-api'
+primary_region = 'syd'
+
+[build]
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+[[http_service.checks]]
+  grace_period = '10s'
+  interval = '15s'
+  method = 'GET'
+  timeout = '5s'
+  path = '/health/live'
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '512mb'
+  processes = ['app']

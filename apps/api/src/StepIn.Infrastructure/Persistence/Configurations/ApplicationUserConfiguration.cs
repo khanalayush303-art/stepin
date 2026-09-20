@@ -18,6 +18,13 @@ public sealed class ApplicationUserConfiguration : IEntityTypeConfiguration<Appl
         builder.Property(u => u.AccountStatus).HasConversion<string>().HasMaxLength(20);
 
         builder.HasIndex(u => u.ClerkUserId).IsUnique();
-        builder.HasIndex(u => u.Email).IsUnique();
+
+        // Not unique: Clerk's default session token carries no email claim at
+        // all (that needs a custom session token configured in the Clerk
+        // Dashboard), so every new user syncs with Email = "" until that's
+        // set up — a unique index here means the second such user's very
+        // first request crashes on a duplicate-key violation. ClerkUserId
+        // is, and remains, the only identity guarantee this table makes.
+        builder.HasIndex(u => u.Email);
     }
 }

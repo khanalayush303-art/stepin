@@ -7,8 +7,11 @@ const nextConfig: NextConfig = {
 
   // Surfaces the API base URL to the browser. Phase 1 starts calling it; Phase 0
   // only needs the wiring to exist so the value is not hard-coded later.
+  // `||`, not `??` — see the identical fix and rationale in lib/auth/server.ts:
+  // an env var set to "" is still falsy here, so it must not win over the
+  // fallback the way it would with `??`.
   env: {
-    NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5080",
+    NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5080",
     // Fixed route names, not per-environment config — no reason to make every
     // deployment set these via .env.
     NEXT_PUBLIC_CLERK_SIGN_IN_URL: "/sign-in",
@@ -22,7 +25,7 @@ const nextConfig: NextConfig = {
   // token attached per request, not a cookie), but this still avoids having
   // to configure CORS for the frontend origin at all.
   async rewrites() {
-    const apiOrigin = process.env.API_INTERNAL_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5080";
+    const apiOrigin = process.env.API_INTERNAL_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5080";
     return [{ source: "/api/:path*", destination: `${apiOrigin}/api/:path*` }];
   },
 

@@ -1,3 +1,4 @@
+using StepIn.Domain.Applications;
 using StepIn.Domain.Companies;
 using StepIn.Domain.Jobs;
 using StepIn.Domain.Profiles;
@@ -28,6 +29,8 @@ public interface IApplicationDbContext
     IQueryable<Company> Companies { get; }
 
     IQueryable<Job> Jobs { get; }
+
+    IQueryable<JobApplication> JobApplications { get; }
 
     /// <summary>Tracks a new entity for insertion on the next <see cref="SaveChangesAsync"/>.</summary>
     void Add<TEntity>(TEntity entity)

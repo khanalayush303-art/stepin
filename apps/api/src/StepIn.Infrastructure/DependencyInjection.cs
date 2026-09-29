@@ -5,6 +5,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using StepIn.Application.Common.Interfaces;
 using StepIn.Infrastructure.Persistence;
 using StepIn.Infrastructure.Services;
+using StepIn.Infrastructure.Storage;
 
 namespace StepIn.Infrastructure;
 
@@ -35,6 +36,7 @@ public static class DependencyInjection
         }
 
         services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
+        services.AddSingleton<IResumeStorage, LocalDiskResumeStorage>();
 
         services.AddDbContext<ApplicationDbContext>(options =>
         {

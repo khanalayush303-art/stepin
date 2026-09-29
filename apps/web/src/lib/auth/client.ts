@@ -25,10 +25,15 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, token: string | null, init?: RequestInit): Promise<T> {
+  // FormData bodies must not get a hand-set Content-Type: the browser needs
+  // to set its own multipart boundary, which is lost the moment this header
+  // is present at all.
+  const isFormData = init?.body instanceof FormData;
+
   const response = await fetch(path, {
     ...init,
     headers: {
-      "Content-Type": "application/json",
+      ...(isFormData ? {} : { "Content-Type": "application/json" }),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...init?.headers,
     },
@@ -56,6 +61,8 @@ export const apiClient = {
       method: "PUT",
       body: data === undefined ? undefined : JSON.stringify(data),
     }),
+  postForm: <T>(path: string, token: string | null, formData: FormData): Promise<T> =>
+    request<T>(path, token, { method: "POST", body: formData }),
 };
 
 export function formError(error: unknown): string {

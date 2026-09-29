@@ -41,8 +41,12 @@ services:
       # Clerk Frontend API domain — used for JWKS discovery only, not a secret.
       Clerk__Authority: ${CLERK_AUTHORITY:-}
       Clerk__AuthorizedParties__0: ${WEB_ORIGIN:-http://localhost:3000}
+      # Phase 2.4 local-development resume storage only — not production-durable.
+      Storage__ResumeRootPath: /app/data/resumes
     ports:
       - "${API_PORT:-5080}:8080"
+    volumes:
+      - resume-data:/app/data/resumes
     healthcheck:
       # The aspnet runtime image has neither wget nor curl, and adding one
       # just for this would be an unnecessary dependency — bash (which the
@@ -87,3 +91,4 @@ services:
 
 volumes:
   db-data:
+  resume-data:

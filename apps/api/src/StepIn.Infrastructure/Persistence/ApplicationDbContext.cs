@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using StepIn.Application.Common.Interfaces;
+using StepIn.Domain.Applications;
 using StepIn.Domain.Common;
 using StepIn.Domain.Companies;
 using StepIn.Domain.Jobs;
@@ -33,6 +34,8 @@ public sealed class ApplicationDbContext(
 
     public DbSet<Job> Jobs => Set<Job>();
 
+    public DbSet<JobApplication> JobApplications => Set<JobApplication>();
+
     IQueryable<ApplicationUser> IApplicationDbContext.Users => Users;
 
     IQueryable<CandidateProfile> IApplicationDbContext.CandidateProfiles => CandidateProfiles;
@@ -48,6 +51,8 @@ public sealed class ApplicationDbContext(
     IQueryable<Company> IApplicationDbContext.Companies => Companies;
 
     IQueryable<Job> IApplicationDbContext.Jobs => Jobs;
+
+    IQueryable<JobApplication> IApplicationDbContext.JobApplications => JobApplications;
 
     void IApplicationDbContext.Add<TEntity>(TEntity entity) => Set<TEntity>().Add(entity);
 

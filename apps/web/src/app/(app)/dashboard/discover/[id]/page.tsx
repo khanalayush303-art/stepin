@@ -16,12 +16,14 @@ import {
   Search,
   User,
 } from "lucide-react";
+import { useAuth } from "@clerk/nextjs";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DashboardShell, type DashboardNavItem } from "@/components/dashboard/dashboard-shell";
 import { ApiError, formError } from "@/lib/auth/client";
+import { getApplicationEligibility } from "@/lib/applications/api";
 import { getPublicJob } from "@/lib/jobs/api";
 import type { PublicJob } from "@/lib/jobs/types";
 import { formatDate } from "@/lib/utils";
@@ -38,17 +40,26 @@ const NAV: DashboardNavItem[] = [
 
 export default function JobDetailsPage() {
   const params = useParams<{ id: string }>();
+  const { getToken } = useAuth();
   const [job, setJob] = React.useState<PublicJob | null>(null);
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string>();
   const [notFound, setNotFound] = React.useState(false);
+  const [hasApplied, setHasApplied] = React.useState(false);
+  const [existingApplicationId, setExistingApplicationId] = React.useState<string>();
 
   const load = React.useCallback(async () => {
     setLoading(true);
     setLoadError(undefined);
     setNotFound(false);
     try {
-      setJob(await getPublicJob(params.id));
+      const [loadedJob, eligibility] = await Promise.all([
+        getPublicJob(params.id),
+        getToken().then((token) => getApplicationEligibility(token, params.id)),
+      ]);
+      setJob(loadedJob);
+      setHasApplied(eligibility.hasApplied);
+      setExistingApplicationId(eligibility.applicationId ?? undefined);
     } catch (error) {
       if (error instanceof ApiError && error.status === 404) {
         setNotFound(true);
@@ -58,7 +69,7 @@ export default function JobDetailsPage() {
     } finally {
       setLoading(false);
     }
-  }, [params.id]);
+  }, [params.id, getToken]);
 
   React.useEffect(() => {
     // Fetch-on-mount: same documented pattern as every other Phase 2.1/2.2/2.3 page.
@@ -132,9 +143,15 @@ export default function JobDetailsPage() {
                     <p className="text-small text-muted-foreground">Compensation not listed</p>
                   )}
                 </div>
-                <Button disabled title="Applications open in a later phase">
-                  Apply
-                </Button>
+                {hasApplied ? (
+                  <Button variant="outline" asChild>
+                    <Link href={`/dashboard/applications/${existingApplicationId}`}>Already applied &middot; View application</Link>
+                  </Button>
+                ) : (
+                  <Button asChild>
+                    <Link href={`/dashboard/discover/${job.id}/apply`}>Apply</Link>
+                  </Button>
+                )}
               </div>
 
               <div className="space-y-2">

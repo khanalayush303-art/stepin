@@ -23,6 +23,10 @@ RUN dotnet publish src/StepIn.Api/StepIn.Api.csproj \
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
+# COPY below always writes root:root regardless of the active USER, so this
+# directory needs its ownership fixed up while still root, before the switch.
+RUN mkdir -p /app/data/resumes && chown -R app:app /app/data
+
 # Runs as the non-root `app` user that the aspnet image ships with.
 USER app
 

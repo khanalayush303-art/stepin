@@ -71,9 +71,11 @@ export default function RecruiterDashboardPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <Button>
-              <Plus />
-              Post a role
+            <Button asChild>
+              <Link href="/recruiter/jobs/new">
+                <Plus />
+                Post a role
+              </Link>
             </Button>
             <Avatar name="Recruiting Team" />
           </div>

@@ -38,6 +38,13 @@ test("/recruiter/profile redirects an unauthenticated visitor to sign-in", async
   await expect(page).toHaveURL(/\/sign-in\?returnTo=%2Frecruiter$/);
 });
 
+for (const path of ["/recruiter/jobs", "/recruiter/jobs/new", "/recruiter/jobs/123/edit"]) {
+  test(`${path} redirects an unauthenticated visitor to sign-in`, async ({ page }) => {
+    await page.goto(path);
+    await expect(page).toHaveURL(/\/sign-in\?returnTo=%2Frecruiter$/);
+  });
+}
+
 test("old forgot-password/reset-password/verify-email links redirect to sign-in", async ({ page }) => {
   await page.goto("/forgot-password");
   await expect(page).toHaveURL(/\/sign-in$/);

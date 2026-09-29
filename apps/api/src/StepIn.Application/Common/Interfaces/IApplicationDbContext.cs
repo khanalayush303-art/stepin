@@ -1,4 +1,5 @@
 using StepIn.Domain.Companies;
+using StepIn.Domain.Jobs;
 using StepIn.Domain.Profiles;
 using StepIn.Domain.Users;
 
@@ -25,6 +26,8 @@ public interface IApplicationDbContext
     IQueryable<RecruiterProfile> RecruiterProfiles { get; }
 
     IQueryable<Company> Companies { get; }
+
+    IQueryable<Job> Jobs { get; }
 
     /// <summary>Tracks a new entity for insertion on the next <see cref="SaveChangesAsync"/>.</summary>
     void Add<TEntity>(TEntity entity)

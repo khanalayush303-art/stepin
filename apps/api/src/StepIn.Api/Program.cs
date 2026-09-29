@@ -83,6 +83,7 @@ app.UseSwaggerUI(options =>
 app.MapHealthEndpoints();
 app.MapMetaEndpoints();
 app.MapAuthEndpoints();
+app.MapProfileEndpoints();
 
 app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
 

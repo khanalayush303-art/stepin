@@ -1,3 +1,5 @@
+using StepIn.Domain.Companies;
+using StepIn.Domain.Profiles;
 using StepIn.Domain.Users;
 
 namespace StepIn.Application.Common.Interfaces;
@@ -11,6 +13,26 @@ namespace StepIn.Application.Common.Interfaces;
 public interface IApplicationDbContext
 {
     IQueryable<ApplicationUser> Users { get; }
+
+    IQueryable<CandidateProfile> CandidateProfiles { get; }
+
+    IQueryable<CandidateEducation> CandidateEducations { get; }
+
+    IQueryable<CandidateExperience> CandidateExperiences { get; }
+
+    IQueryable<CandidateCertification> CandidateCertifications { get; }
+
+    IQueryable<RecruiterProfile> RecruiterProfiles { get; }
+
+    IQueryable<Company> Companies { get; }
+
+    /// <summary>Tracks a new entity for insertion on the next <see cref="SaveChangesAsync"/>.</summary>
+    void Add<TEntity>(TEntity entity)
+        where TEntity : class;
+
+    /// <summary>Tracks entities for deletion on the next <see cref="SaveChangesAsync"/>.</summary>
+    void RemoveRange<TEntity>(IEnumerable<TEntity> entities)
+        where TEntity : class;
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

@@ -26,7 +26,7 @@ const NAV: DashboardNavItem[] = [
   { href: "/recruiter/jobs", label: "Job listings", icon: FileText, badge: "6" },
   { href: "/recruiter/candidates", label: "Candidates", icon: Users, badge: "84" },
   { href: "/recruiter/interviews", label: "Interviews", icon: Clock, badge: "5" },
-  { href: "/recruiter/company", label: "Company profile", icon: Building2 },
+  { href: "/recruiter/profile", label: "Company profile", icon: Building2 },
 ];
 
 const LIVE_JOBS = [
@@ -181,8 +181,8 @@ export default function RecruiterDashboardPage() {
                   <dd className="font-medium text-foreground">318 candidates</dd>
                 </div>
               </dl>
-              <Button variant="outline" className="w-full">
-                Edit company profile
+              <Button variant="outline" className="w-full" asChild>
+                <Link href="/recruiter/profile">Edit company profile</Link>
               </Button>
             </Card>
 

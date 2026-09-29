@@ -1,5 +1,4 @@
 using System.Security.Claims;
-using Microsoft.EntityFrameworkCore;
 using StepIn.Api.Infrastructure;
 using StepIn.Application.Common.Interfaces;
 using StepIn.Domain.Common;
@@ -37,7 +36,7 @@ public static class AuthEndpoints
         IApplicationDbContext db,
         CancellationToken cancellationToken)
     {
-        var user = await CurrentUserAsync(principal, db, cancellationToken);
+        var user = await principal.GetCurrentUserAsync(db, cancellationToken);
 
         return user is null ? Results.Unauthorized() : Results.Ok(ToResponse(user, principal));
     }
@@ -53,7 +52,7 @@ public static class AuthEndpoints
             return Results.ValidationProblem(new Dictionary<string, string[]> { ["role"] = ["Select Applicant or Recruiter."] });
         }
 
-        var user = await CurrentUserAsync(principal, db, cancellationToken);
+        var user = await principal.GetCurrentUserAsync(db, cancellationToken);
 
         if (user is null)
         {
@@ -64,14 +63,6 @@ public static class AuthEndpoints
         await db.SaveChangesAsync(cancellationToken);
 
         return Results.Ok(new { redirectTo = DashboardPathForRole(role!.Value) });
-    }
-
-    private static Task<ApplicationUser?> CurrentUserAsync(ClaimsPrincipal principal, IApplicationDbContext db, CancellationToken cancellationToken)
-    {
-        var id = principal.GetAppUserId();
-        return id is null
-            ? Task.FromResult<ApplicationUser?>(null)
-            : db.Users.FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
     }
 
     private static CurrentUserResponse ToResponse(ApplicationUser user, ClaimsPrincipal principal) => new(

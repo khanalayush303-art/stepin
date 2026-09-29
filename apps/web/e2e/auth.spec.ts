@@ -25,6 +25,19 @@ test("register renders without an active session", async ({ page }) => {
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Create your account");
 });
 
+// Nested under (app)/dashboard and (app)/recruiter, so they're covered by the
+// same auth.protect() as their parent — but that layout's unauthenticatedUrl
+// hardcodes returnTo to the parent route, not the nested path.
+test("/dashboard/profile redirects an unauthenticated visitor to sign-in", async ({ page }) => {
+  await page.goto("/dashboard/profile");
+  await expect(page).toHaveURL(/\/sign-in\?returnTo=%2Fdashboard$/);
+});
+
+test("/recruiter/profile redirects an unauthenticated visitor to sign-in", async ({ page }) => {
+  await page.goto("/recruiter/profile");
+  await expect(page).toHaveURL(/\/sign-in\?returnTo=%2Frecruiter$/);
+});
+
 test("old forgot-password/reset-password/verify-email links redirect to sign-in", async ({ page }) => {
   await page.goto("/forgot-password");
   await expect(page).toHaveURL(/\/sign-in$/);

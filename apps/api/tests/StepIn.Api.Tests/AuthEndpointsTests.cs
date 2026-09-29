@@ -159,6 +159,64 @@ public sealed class AuthEndpointsTests(AuthApiFactory factory) : IClassFixture<A
         (await RegisterAsync()).Should().NotBe(await RegisterAsync());
     }
 
+    [Fact]
+    public async Task Placeholder_profile_data_self_heals_once_real_claims_are_available()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var clerkUserId = $"user_{Guid.NewGuid():N}";
+
+        // First request: simulates Clerk's default session token, which carries
+        // no profile claims — sync falls back to the documented placeholder.
+        var placeholderToken = AuthApiFactory.IssueToken(clerkUserId, email: "", firstName: "New", lastName: "User");
+        using var firstRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/auth/me");
+        Authorize(firstRequest, placeholderToken);
+        var firstResponse = await client.SendAsync(firstRequest, ct);
+        var firstBody = await firstResponse.Content.ReadFromJsonAsync<CurrentUserResponse>(ct);
+        firstBody!.Email.Should().BeEmpty();
+        firstBody.FirstName.Should().Be("New");
+        firstBody.LastName.Should().Be("User");
+
+        // Second request, same Clerk identity: a token that now carries real
+        // claims (e.g. after the session-token template is configured).
+        var realToken = AuthApiFactory.IssueToken(clerkUserId, "john@example.com", "John", "Smith");
+        using var secondRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/auth/me");
+        Authorize(secondRequest, realToken);
+        var secondResponse = await client.SendAsync(secondRequest, ct);
+        var secondBody = await secondResponse.Content.ReadFromJsonAsync<CurrentUserResponse>(ct);
+
+        secondBody!.Id.Should().Be(firstBody.Id); // same ApplicationUser row, not a new one
+        secondBody.Email.Should().Be("john@example.com");
+        secondBody.FirstName.Should().Be("John");
+        secondBody.LastName.Should().Be("Smith");
+    }
+
+    [Fact]
+    public async Task Good_profile_data_is_never_overwritten_by_a_subsequent_blank_claim()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var clerkUserId = $"user_{Guid.NewGuid():N}";
+
+        var realToken = AuthApiFactory.IssueToken(clerkUserId, "jane@example.com", "Jane", "Doe");
+        using var firstRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/auth/me");
+        Authorize(firstRequest, realToken);
+        (await client.SendAsync(firstRequest, ct)).EnsureSuccessStatusCode();
+
+        // A later request whose token happens to carry no email claim (e.g. a
+        // misconfigured or reverted session token) must not blank out data
+        // that's already stored.
+        var blankEmailToken = AuthApiFactory.IssueToken(clerkUserId, email: "", firstName: "Jane", lastName: "Doe");
+        using var secondRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/auth/me");
+        Authorize(secondRequest, blankEmailToken);
+        var secondResponse = await client.SendAsync(secondRequest, ct);
+        var secondBody = await secondResponse.Content.ReadFromJsonAsync<CurrentUserResponse>(ct);
+
+        secondBody!.Email.Should().Be("jane@example.com");
+        secondBody.FirstName.Should().Be("Jane");
+        secondBody.LastName.Should().Be("Doe");
+    }
+
     // --------------------------------------------------------- account setup ---
 
     [Fact]

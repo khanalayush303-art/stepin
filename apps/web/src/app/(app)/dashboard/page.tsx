@@ -14,6 +14,7 @@ import {
   Search,
   User,
 } from "lucide-react";
+import { useAuth } from "@clerk/nextjs";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -23,6 +24,7 @@ import { DashboardShell, type DashboardNavItem } from "@/components/dashboard/da
 import { StatCard } from "@/components/dashboard/stat-card";
 import { APPLICATIONS, INTERVIEWS, JOBS, NOTIFICATIONS } from "@/lib/placeholder-data";
 import { formatDate } from "@/lib/utils";
+import { getCandidateProfile } from "@/lib/profile/api";
 
 const NAV: DashboardNavItem[] = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
@@ -32,6 +34,7 @@ const NAV: DashboardNavItem[] = [
   { href: "/dashboard/interviews", label: "Interviews", icon: User, badge: "2" },
   { href: "/dashboard/prepare", label: "Prepare", icon: GraduationCap },
   { href: "/dashboard/notifications", label: "Notifications", icon: Bell, badge: "3" },
+  { href: "/dashboard/profile", label: "My profile", icon: User },
 ];
 
 const NOTIFICATION_ICON = {
@@ -73,13 +76,35 @@ function getClientGreeting() {
 
 export default function ApplicantDashboardPage() {
   const { user } = useUser();
+  const { getToken } = useAuth();
   const active = APPLICATIONS[0];
   const recent = APPLICATIONS.slice(1);
   const recommended = JOBS.slice(4, 7);
-  const completion = 60;
+  const [completion, setCompletion] = React.useState<number | null>(null);
   const displayName = user?.fullName ?? user?.firstName ?? "there";
 
   const greeting = React.useSyncExternalStore(subscribeNever, getClientGreeting, getServerGreeting);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function loadCompletion() {
+      try {
+        const token = await getToken();
+        const profile = await getCandidateProfile(token);
+        if (!cancelled) {
+          setCompletion(profile.profileCompletionPercent);
+        }
+      } catch {
+        // Best-effort: the completion card just stays hidden if this fails.
+      }
+    }
+
+    void loadCompletion();
+    return () => {
+      cancelled = true;
+    };
+  }, [getToken]);
 
   return (
     <DashboardShell nav={NAV} navLabel="Applicant dashboard">
@@ -103,32 +128,36 @@ export default function ApplicantDashboardPage() {
         </div>
 
         {/* Profile completion */}
-        <Card className="border-0 bg-primary-subtle p-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
-            <div className="flex-1 space-y-2.5">
-              <h2 className="text-h4 text-primary-subtle-fg">
-                Your profile is {completion}% complete
-              </h2>
-              <div
-                className="h-2 w-full overflow-hidden rounded-full bg-surface"
-                role="progressbar"
-                aria-valuenow={completion}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-label="Profile completion"
-              >
-                <span
-                  className="block h-full rounded-full bg-primary"
-                  style={{ width: `${completion}%` }}
-                />
+        {completion !== null ? (
+          <Card className="border-0 bg-primary-subtle p-6">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
+              <div className="flex-1 space-y-2.5">
+                <h2 className="text-h4 text-primary-subtle-fg">
+                  Your profile is {completion}% complete
+                </h2>
+                <div
+                  className="h-2 w-full overflow-hidden rounded-full bg-surface"
+                  role="progressbar"
+                  aria-valuenow={completion}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-label="Profile completion"
+                >
+                  <span
+                    className="block h-full rounded-full bg-primary"
+                    style={{ width: `${completion}%` }}
+                  />
+                </div>
+                <p className="text-small text-primary-subtle-fg">
+                  Add your résumé and two more skills to appear in employer searches.
+                </p>
               </div>
-              <p className="text-small text-primary-subtle-fg">
-                Add your résumé and two more skills to appear in employer searches.
-              </p>
+              <Button className="lg:shrink-0" asChild>
+                <Link href="/dashboard/profile">Complete profile</Link>
+              </Button>
             </div>
-            <Button className="lg:shrink-0">Complete profile</Button>
-          </div>
-        </Card>
+          </Card>
+        ) : null}
 
         {/* Metrics */}
         <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

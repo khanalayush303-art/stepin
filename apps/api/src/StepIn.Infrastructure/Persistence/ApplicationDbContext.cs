@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using StepIn.Application.Common.Interfaces;
 using StepIn.Domain.Common;
+using StepIn.Domain.Companies;
+using StepIn.Domain.Profiles;
 using StepIn.Domain.Users;
 
 namespace StepIn.Infrastructure.Persistence;
@@ -16,7 +18,35 @@ public sealed class ApplicationDbContext(
 
     public DbSet<ApplicationUser> Users => Set<ApplicationUser>();
 
+    public DbSet<CandidateProfile> CandidateProfiles => Set<CandidateProfile>();
+
+    public DbSet<CandidateEducation> CandidateEducations => Set<CandidateEducation>();
+
+    public DbSet<CandidateExperience> CandidateExperiences => Set<CandidateExperience>();
+
+    public DbSet<CandidateCertification> CandidateCertifications => Set<CandidateCertification>();
+
+    public DbSet<RecruiterProfile> RecruiterProfiles => Set<RecruiterProfile>();
+
+    public DbSet<Company> Companies => Set<Company>();
+
     IQueryable<ApplicationUser> IApplicationDbContext.Users => Users;
+
+    IQueryable<CandidateProfile> IApplicationDbContext.CandidateProfiles => CandidateProfiles;
+
+    IQueryable<CandidateEducation> IApplicationDbContext.CandidateEducations => CandidateEducations;
+
+    IQueryable<CandidateExperience> IApplicationDbContext.CandidateExperiences => CandidateExperiences;
+
+    IQueryable<CandidateCertification> IApplicationDbContext.CandidateCertifications => CandidateCertifications;
+
+    IQueryable<RecruiterProfile> IApplicationDbContext.RecruiterProfiles => RecruiterProfiles;
+
+    IQueryable<Company> IApplicationDbContext.Companies => Companies;
+
+    void IApplicationDbContext.Add<TEntity>(TEntity entity) => Set<TEntity>().Add(entity);
+
+    void IApplicationDbContext.RemoveRange<TEntity>(IEnumerable<TEntity> entities) => Set<TEntity>().RemoveRange(entities);
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

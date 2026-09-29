@@ -54,6 +54,7 @@ public sealed class ClerkUserSyncClaimsTransformation(ApplicationDbContext db) :
 
         if (existing is not null)
         {
+            await SyncProfileClaimsAsync(existing, principal);
             return existing;
         }
 
@@ -78,6 +79,49 @@ public sealed class ClerkUserSyncClaimsTransformation(ApplicationDbContext db) :
             // the loser just reads what the winner already committed.
             db.ChangeTracker.Clear();
             return await db.Users.FirstAsync(u => u.ClerkUserId == clerkUserId);
+        }
+    }
+
+    /// <summary>
+    /// Clerk's default session token carries none of these claims at all (see
+    /// the README's Authentication section for the session-token template that
+    /// adds them) — until that's configured, every new user syncs with
+    /// <c>FirstName = "New"</c>, <c>LastName = "User"</c>, <c>Email = ""</c>.
+    /// Re-checking on every request, not just at creation, means a row synced
+    /// before the template existed self-heals on the user's very next request
+    /// once it's added, with no manual data fix. Never blanks a good stored
+    /// value with a missing claim, and is a no-op (no extra write) once values
+    /// match.
+    /// </summary>
+    private async Task SyncProfileClaimsAsync(ApplicationUser user, ClaimsPrincipal principal)
+    {
+        var email = principal.FindFirstValue(ClaimTypes.Email) ?? principal.FindFirstValue("email");
+        var firstName = principal.FindFirstValue(ClaimTypes.GivenName) ?? principal.FindFirstValue("given_name");
+        var lastName = principal.FindFirstValue(ClaimTypes.Surname) ?? principal.FindFirstValue("family_name");
+
+        var changed = false;
+
+        if (!string.IsNullOrWhiteSpace(email) && email != user.Email)
+        {
+            user.Email = email;
+            changed = true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(firstName) && firstName != user.FirstName)
+        {
+            user.FirstName = firstName;
+            changed = true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(lastName) && lastName != user.LastName)
+        {
+            user.LastName = lastName;
+            changed = true;
+        }
+
+        if (changed)
+        {
+            await db.SaveChangesAsync();
         }
     }
 }

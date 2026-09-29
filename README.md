@@ -265,6 +265,38 @@ Next.js  ──same-origin /api rewrite──▶  ASP.NET Core  ──▶  Postg
    (`CLERK_AUTHORITY` is the same "Frontend API" domain Clerk shows you, used
    only for JWKS discovery — it is not a secret.)
 
+### Fixing incomplete profile data (`FirstName: "New"`, blank email)
+
+Clerk's **default** session token carries no profile claims at all — the API
+already reads `email` / `given_name` / `family_name`
+(`ClerkUserSyncClaimsTransformation`), they're just not present in the token
+until you add them. Until this is configured, every new sign-up syncs with
+`FirstName = "New"`, `LastName = "User"`, `Email = ""`.
+
+1. In the Clerk Dashboard, go to **Configure → Sessions → Customize session token**.
+2. Add these claims (this is a dashboard setting, not a secret — nothing here
+   needs `CLERK_SECRET_KEY` or any other credential):
+   ```json
+   {
+     "email": "{{user.primary_email_address}}",
+     "given_name": "{{user.first_name}}",
+     "family_name": "{{user.last_name}}"
+   }
+   ```
+3. No code or deploy change is needed beyond that — the API already reads
+   these exact claim names.
+
+This fixes new sign-ups immediately. Existing rows synced before this was
+configured self-heal too: `ClerkUserSyncClaimsTransformation` re-checks these
+claims on every authenticated request (not just the first), and updates the
+stored `Email`/`FirstName`/`LastName` the moment a better value shows up in the
+token — so an affected user's row corrects itself on their very next request,
+with no manual data migration.
+
+**This configuration has not been applied in this environment** — dashboard
+access isn't available here. Apply and verify it manually before relying on
+real names/emails downstream (e.g. in the candidate/recruiter profile UI).
+
 ### Troubleshooting
 
 - **The app won't boot / throws about a missing publishable key.**

@@ -415,4 +415,178 @@ public sealed class JobEndpointsTests(AuthApiFactory factory) : IClassFixture<Au
         stillB!.Title.Should().Be("Job B");
         stillB.CompanyName.Should().Be("Company B");
     }
+
+    // ------------------------------------------------------- candidate/public ---
+
+    private async Task<JobResponse> CreateAndPublishJobAsync(HttpClient client, string token, CreateJobRequest? request, CancellationToken ct)
+    {
+        var created = await CreateJobAsync(client, token, request, ct);
+        using var publish = BuildRequest(HttpMethod.Post, $"/api/v1/recruiter/jobs/{created.Id}/publish", token);
+        (await client.SendAsync(publish, ct)).EnsureSuccessStatusCode();
+        return created;
+    }
+
+    [Fact]
+    public async Task Public_list_and_details_require_no_authentication_at_all()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var token = await IssueRecruiterWithCompanyTokenAsync(ct, "Acme Pty Ltd");
+        var published = await CreateAndPublishJobAsync(client, token, null, ct);
+
+        using var list = BuildRequest(HttpMethod.Get, "/api/v1/jobs", token: null);
+        (await client.SendAsync(list, ct)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var details = BuildRequest(HttpMethod.Get, $"/api/v1/jobs/{published.Id}", token: null);
+        (await client.SendAsync(details, ct)).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Only_published_jobs_are_visible_in_the_public_list_and_details()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var token = await IssueRecruiterWithCompanyTokenAsync(ct, "Acme Pty Ltd");
+
+        var draft = await CreateJobAsync(client, token, ValidCreateRequest("Draft role"), ct);
+        var published = await CreateAndPublishJobAsync(client, token, ValidCreateRequest("Published role"), ct);
+        var unpublished = await CreateAndPublishJobAsync(client, token, ValidCreateRequest("Unpublished role"), ct);
+        using var unpublish = BuildRequest(HttpMethod.Post, $"/api/v1/recruiter/jobs/{unpublished.Id}/unpublish", token);
+        (await client.SendAsync(unpublish, ct)).EnsureSuccessStatusCode();
+
+        using var listRequest = BuildRequest(HttpMethod.Get, "/api/v1/jobs", token: null);
+        var listResponse = await client.SendAsync(listRequest, ct);
+        var summaries = await listResponse.Content.ReadFromJsonAsync<List<PublicJobSummaryResponse>>(ct);
+
+        summaries!.Select(s => s.Id).Should().Contain(published.Id);
+        summaries!.Select(s => s.Id).Should().NotContain(draft.Id);
+        summaries!.Select(s => s.Id).Should().NotContain(unpublished.Id);
+
+        using var publishedDetails = BuildRequest(HttpMethod.Get, $"/api/v1/jobs/{published.Id}", token: null);
+        (await client.SendAsync(publishedDetails, ct)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var draftDetails = BuildRequest(HttpMethod.Get, $"/api/v1/jobs/{draft.Id}", token: null);
+        (await client.SendAsync(draftDetails, ct)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        using var unpublishedDetails = BuildRequest(HttpMethod.Get, $"/api/v1/jobs/{unpublished.Id}", token: null);
+        (await client.SendAsync(unpublishedDetails, ct)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Unknown_job_id_returns_404_on_the_public_details_endpoint()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+
+        using var request = BuildRequest(HttpMethod.Get, $"/api/v1/jobs/{Guid.NewGuid()}", token: null);
+        var response = await client.SendAsync(request, ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Public_job_response_never_includes_ownership_fields()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var token = await IssueRecruiterWithCompanyTokenAsync(ct, "Acme Pty Ltd");
+        var published = await CreateAndPublishJobAsync(client, token, null, ct);
+
+        using var request = BuildRequest(HttpMethod.Get, $"/api/v1/jobs/{published.Id}", token: null);
+        var response = await client.SendAsync(request, ct);
+        var raw = await response.Content.ReadAsStringAsync(ct);
+
+        raw.Should().NotContain("recruiterProfileId", "the public DTO has no such property");
+        raw.Should().NotContain("companyId", "the public DTO exposes companyName, never the raw company id");
+    }
+
+    [Fact]
+    public async Task No_mutation_route_exists_under_the_public_jobs_prefix()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var token = await IssueRecruiterWithCompanyTokenAsync(ct, "Acme Pty Ltd");
+
+        // Confirms at runtime what the source already shows: no MapPost exists
+        // for "/api/v1/jobs" — ASP.NET Core's routing recognizes the path (GET
+        // is mapped there) but refuses the method, so this is 405 rather than
+        // 404 — a stronger signal that no handler for this verb exists at all,
+        // regardless of whether a token is supplied.
+        using var request = BuildRequest(HttpMethod.Post, "/api/v1/jobs", token, ValidCreateRequest());
+        var response = await client.SendAsync(request, ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.MethodNotAllowed);
+    }
+
+    [Fact]
+    public async Task Search_filter_matches_title_or_description()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var token = await IssueRecruiterWithCompanyTokenAsync(ct, "Acme Pty Ltd");
+        var matching = await CreateAndPublishJobAsync(client, token, ValidCreateRequest("Graduate Data Analyst"), ct);
+        var other = await CreateAndPublishJobAsync(client, token, ValidCreateRequest("Warehouse Operator"), ct);
+
+        using var request = BuildRequest(HttpMethod.Get, "/api/v1/jobs?search=Data+Analyst", token: null);
+        var response = await client.SendAsync(request, ct);
+        var summaries = await response.Content.ReadFromJsonAsync<List<PublicJobSummaryResponse>>(ct);
+
+        summaries!.Select(s => s.Id).Should().Contain(matching.Id);
+        summaries!.Select(s => s.Id).Should().NotContain(other.Id);
+    }
+
+    [Fact]
+    public async Task Employment_and_workplace_type_filters_narrow_results()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var token = await IssueRecruiterWithCompanyTokenAsync(ct, "Acme Pty Ltd");
+        var fullTimeRemote = await CreateAndPublishJobAsync(
+            client, token, new CreateJobRequest("Role A", "Description.", "FullTime", "Remote", "Sydney", null, null), ct);
+        var contractOnSite = await CreateAndPublishJobAsync(
+            client, token, new CreateJobRequest("Role B", "Description.", "Contract", "OnSite", "Sydney", null, null), ct);
+
+        using var employmentRequest = BuildRequest(HttpMethod.Get, "/api/v1/jobs?employmentType=FullTime", token: null);
+        var employmentSummaries = await (await client.SendAsync(employmentRequest, ct)).Content.ReadFromJsonAsync<List<PublicJobSummaryResponse>>(ct);
+        employmentSummaries!.Select(s => s.Id).Should().Contain(fullTimeRemote.Id);
+        employmentSummaries!.Select(s => s.Id).Should().NotContain(contractOnSite.Id);
+
+        using var workplaceRequest = BuildRequest(HttpMethod.Get, "/api/v1/jobs?workplaceType=OnSite", token: null);
+        var workplaceSummaries = await (await client.SendAsync(workplaceRequest, ct)).Content.ReadFromJsonAsync<List<PublicJobSummaryResponse>>(ct);
+        workplaceSummaries!.Select(s => s.Id).Should().Contain(contractOnSite.Id);
+        workplaceSummaries!.Select(s => s.Id).Should().NotContain(fullTimeRemote.Id);
+    }
+
+    [Fact]
+    public async Task Location_filter_partially_matches()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var token = await IssueRecruiterWithCompanyTokenAsync(ct, "Acme Pty Ltd");
+        var sydney = await CreateAndPublishJobAsync(
+            client, token, new CreateJobRequest("Role A", "Description.", "FullTime", "Remote", "Sydney, NSW", null, null), ct);
+        var melbourne = await CreateAndPublishJobAsync(
+            client, token, new CreateJobRequest("Role B", "Description.", "FullTime", "Remote", "Melbourne, VIC", null, null), ct);
+
+        using var request = BuildRequest(HttpMethod.Get, "/api/v1/jobs?location=Sydney", token: null);
+        var response = await client.SendAsync(request, ct);
+        var summaries = await response.Content.ReadFromJsonAsync<List<PublicJobSummaryResponse>>(ct);
+
+        summaries!.Select(s => s.Id).Should().Contain(sydney.Id);
+        summaries!.Select(s => s.Id).Should().NotContain(melbourne.Id);
+    }
+
+    [Theory]
+    [InlineData("employmentType", "NotAType")]
+    [InlineData("workplaceType", "NotAType")]
+    public async Task Invalid_filter_enum_value_returns_400(string paramName, string value)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+
+        using var request = BuildRequest(HttpMethod.Get, $"/api/v1/jobs?{paramName}={value}", token: null);
+        var response = await client.SendAsync(request, ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
 }

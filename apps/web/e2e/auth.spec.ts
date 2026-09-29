@@ -45,6 +45,13 @@ for (const path of ["/recruiter/jobs", "/recruiter/jobs/new", "/recruiter/jobs/1
   });
 }
 
+for (const path of ["/dashboard/discover", "/dashboard/discover/123"]) {
+  test(`${path} redirects an unauthenticated visitor to sign-in`, async ({ page }) => {
+    await page.goto(path);
+    await expect(page).toHaveURL(/\/sign-in\?returnTo=%2Fdashboard$/);
+  });
+}
+
 test("old forgot-password/reset-password/verify-email links redirect to sign-in", async ({ page }) => {
   await page.goto("/forgot-password");
   await expect(page).toHaveURL(/\/sign-in$/);

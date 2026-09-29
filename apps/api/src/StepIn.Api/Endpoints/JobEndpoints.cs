@@ -31,6 +31,15 @@ public static class JobEndpoints
         jobs.MapPost("/{id:guid}/publish", PublishJobAsync).WithName("PublishJob").WithSummary("Publish a draft or unpublished job.");
         jobs.MapPost("/{id:guid}/unpublish", UnpublishJobAsync).WithName("UnpublishJob").WithSummary("Take a published job down.");
 
+        // Candidate/public job discovery — deliberately no RequireAuthorization
+        // (see the type-level doc comment) and, just as deliberately, no
+        // MapPost/MapPut/MapPatch/MapDelete anywhere in this group: it is
+        // read-only by construction, not by convention.
+        var publicJobs = app.MapGroup("/api/v1/jobs").WithTags("Jobs");
+
+        publicJobs.MapGet("/", ListPublicJobsAsync).WithName("ListPublicJobs").WithSummary("Published jobs, optionally filtered.");
+        publicJobs.MapGet("/{id:guid}", GetPublicJobAsync).WithName("GetPublicJob").WithSummary("A single published job.");
+
         return app;
     }
 
@@ -228,6 +237,103 @@ public static class JobEndpoints
         await db.SaveChangesAsync(cancellationToken);
 
         return Results.Ok(ToResponse(job));
+    }
+
+    // ------------------------------------------------------- candidate/public ---
+
+    private static async Task<IResult> ListPublicJobsAsync(
+        string? search,
+        string? employmentType,
+        string? workplaceType,
+        string? location,
+        IApplicationDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var errors = ValidatePublicFilters(employmentType, workplaceType);
+        if (errors.Count > 0)
+        {
+            return Results.ValidationProblem(errors);
+        }
+
+        var query = db.Jobs.AsNoTracking().Where(j => j.Status == JobStatus.Published);
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            query = query.Where(j => EF.Functions.ILike(j.Title, $"%{search}%") || EF.Functions.ILike(j.Description, $"%{search}%"));
+        }
+
+        if (!string.IsNullOrWhiteSpace(employmentType) && Enum.TryParse<EmploymentType>(employmentType, ignoreCase: true, out var parsedEmploymentType))
+        {
+            query = query.Where(j => j.EmploymentType == parsedEmploymentType);
+        }
+
+        if (!string.IsNullOrWhiteSpace(workplaceType) && Enum.TryParse<WorkplaceType>(workplaceType, ignoreCase: true, out var parsedWorkplaceType))
+        {
+            query = query.Where(j => j.WorkplaceType == parsedWorkplaceType);
+        }
+
+        if (!string.IsNullOrWhiteSpace(location))
+        {
+            query = query.Where(j => EF.Functions.ILike(j.Location, $"%{location}%"));
+        }
+
+        var summaries = await query
+            .OrderByDescending(j => j.PublishedAt)
+            .Select(j => new PublicJobSummaryResponse(
+                j.Id,
+                j.Title,
+                j.Company.Name,
+                j.EmploymentType.ToString(),
+                j.WorkplaceType.ToString(),
+                j.Location,
+                j.Compensation,
+                j.PublishedAt!.Value))
+            .ToListAsync(cancellationToken);
+
+        return Results.Ok(summaries);
+    }
+
+    private static async Task<IResult> GetPublicJobAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken)
+    {
+        var job = await db.Jobs
+            .AsNoTracking()
+            .Where(j => j.Id == id && j.Status == JobStatus.Published)
+            .Select(j => new PublicJobResponse(
+                j.Id,
+                j.Title,
+                j.Description,
+                j.EmploymentType.ToString(),
+                j.WorkplaceType.ToString(),
+                j.Location,
+                j.Compensation,
+                j.Skills,
+                j.Company.Name,
+                j.Company.Description,
+                j.Company.Website,
+                j.Company.LogoUrl,
+                j.Company.Industry,
+                j.Company.Location,
+                j.PublishedAt!.Value))
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return job is null ? Results.NotFound() : Results.Ok(job);
+    }
+
+    private static Dictionary<string, string[]> ValidatePublicFilters(string? employmentType, string? workplaceType)
+    {
+        var errors = new Dictionary<string, string[]>();
+
+        if (!string.IsNullOrWhiteSpace(employmentType) && !Enum.TryParse<EmploymentType>(employmentType, ignoreCase: true, out _))
+        {
+            errors["employmentType"] = ["Not a valid employment type."];
+        }
+
+        if (!string.IsNullOrWhiteSpace(workplaceType) && !Enum.TryParse<WorkplaceType>(workplaceType, ignoreCase: true, out _))
+        {
+            errors["workplaceType"] = ["Not a valid workplace type."];
+        }
+
+        return errors;
     }
 
     // ----------------------------------------------------------------- shared ---

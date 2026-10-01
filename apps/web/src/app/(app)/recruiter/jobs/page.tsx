@@ -19,7 +19,7 @@ import { JobStatusBadge } from "./_components/job-status-badge";
 const NAV: DashboardNavItem[] = [
   { href: "/recruiter", label: "Overview", icon: LayoutDashboard },
   { href: "/recruiter/jobs", label: "Job listings", icon: FileText },
-  { href: "/recruiter/candidates", label: "Candidates", icon: Users, badge: "84" },
+  { href: "/recruiter/applications", label: "Applications", icon: Users },
   { href: "/recruiter/interviews", label: "Interviews", icon: Clock, badge: "5" },
   { href: "/recruiter/profile", label: "Company profile", icon: Building2 },
 ];
@@ -141,6 +141,9 @@ export default function MyJobsPage() {
                   </div>
                   <JobStatusBadge status={job.status} />
                   <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" asChild>
+                      <Link href={`/recruiter/applications?jobId=${job.id}`}>Applications</Link>
+                    </Button>
                     <Button variant="outline" size="sm" asChild>
                       <Link href={`/recruiter/jobs/${job.id}/edit`}>Edit</Link>
                     </Button>

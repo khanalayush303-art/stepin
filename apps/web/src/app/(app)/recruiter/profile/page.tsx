@@ -18,7 +18,7 @@ import type { RecruiterProfile, UpdateRecruiterProfileInput } from "@/lib/profil
 const NAV: DashboardNavItem[] = [
   { href: "/recruiter", label: "Overview", icon: LayoutDashboard },
   { href: "/recruiter/jobs", label: "Job listings", icon: FileText, badge: "6" },
-  { href: "/recruiter/candidates", label: "Candidates", icon: Users, badge: "84" },
+  { href: "/recruiter/applications", label: "Applications", icon: Users },
   { href: "/recruiter/interviews", label: "Interviews", icon: Clock, badge: "5" },
   { href: "/recruiter/profile", label: "Company profile", icon: Building2 },
 ];

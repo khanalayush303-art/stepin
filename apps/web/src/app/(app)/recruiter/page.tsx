@@ -24,7 +24,7 @@ import type { ApplicationStatus } from "@/lib/types";
 const NAV: DashboardNavItem[] = [
   { href: "/recruiter", label: "Overview", icon: LayoutDashboard },
   { href: "/recruiter/jobs", label: "Job listings", icon: FileText, badge: "6" },
-  { href: "/recruiter/candidates", label: "Candidates", icon: Users, badge: "84" },
+  { href: "/recruiter/applications", label: "Applications", icon: Users },
   { href: "/recruiter/interviews", label: "Interviews", icon: Clock, badge: "5" },
   { href: "/recruiter/profile", label: "Company profile", icon: Building2 },
 ];
@@ -145,7 +145,7 @@ export default function RecruiterDashboardPage() {
               <div className="flex items-center justify-between gap-3">
                 <h2 className="text-h4 text-foreground">Candidate pipeline</h2>
                 <Button variant="link" size="sm" className="h-auto p-0" asChild>
-                  <Link href="/recruiter/candidates">See all candidates</Link>
+                  <Link href="/recruiter/applications">See all applications</Link>
                 </Button>
               </div>
               <ul className="divide-y divide-border">

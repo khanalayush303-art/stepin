@@ -1,7 +1,14 @@
 import { apiClient, ApiError } from "@/lib/auth/client";
-import type { Application, ApplicationEligibility, ApplicationSummary } from "./types";
+import type {
+  Application,
+  ApplicationEligibility,
+  ApplicationSummary,
+  RecruiterApplication,
+  RecruiterApplicationSummary,
+} from "./types";
 
 const BASE = "/api/v1/applications";
+const RECRUITER_BASE = "/api/v1/recruiter";
 
 export function listApplications(token: string | null) {
   return apiClient.get<ApplicationSummary[]>(BASE, token);
@@ -28,10 +35,12 @@ export function submitApplication(token: string | null, jobId: string, resume: F
  * A plain <a href> can't carry a Bearer Authorization header, and this API
  * has no cookie session to fall back on — so the download goes through an
  * authenticated fetch, converts the response to a Blob, and triggers the
- * browser's save dialog via a temporary, invisible anchor click.
+ * browser's save dialog via a temporary, invisible anchor click. Shared by
+ * both the candidate's own download and the recruiter's below — same
+ * mechanism, different (already ownership-scoped) path.
  */
-export async function downloadResume(token: string | null, applicationId: string, fileName: string) {
-  const response = await fetch(`${BASE}/${applicationId}/resume`, {
+async function downloadFile(path: string, token: string | null, fileName: string) {
+  const response = await fetch(path, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
 
@@ -51,4 +60,25 @@ export async function downloadResume(token: string | null, applicationId: string
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+export function downloadResume(token: string | null, applicationId: string, fileName: string) {
+  return downloadFile(`${BASE}/${applicationId}/resume`, token, fileName);
+}
+
+// ------------------------------------------------------------- recruiter ---
+// Read-only in Phase 3.2 — no status-change call exists here yet; that's
+// Phase 3.3. Ownership (recruiter must own the job) is enforced entirely
+// server-side; these calls carry no client-side authorization logic.
+
+export function listRecruiterApplicationsForJob(token: string | null, jobId: string) {
+  return apiClient.get<RecruiterApplicationSummary[]>(`${RECRUITER_BASE}/jobs/${jobId}/applications`, token);
+}
+
+export function getRecruiterApplication(token: string | null, id: string) {
+  return apiClient.get<RecruiterApplication>(`${RECRUITER_BASE}/applications/${id}`, token);
+}
+
+export function downloadRecruiterResume(token: string | null, applicationId: string, fileName: string) {
+  return downloadFile(`${RECRUITER_BASE}/applications/${applicationId}/resume`, token, fileName);
 }

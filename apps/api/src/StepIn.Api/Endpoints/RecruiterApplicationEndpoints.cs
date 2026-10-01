@@ -8,16 +8,18 @@ using StepIn.Domain.Profiles;
 namespace StepIn.Api.Endpoints;
 
 /// <summary>
-/// Recruiter-side, read-only view of applications submitted to the
-/// recruiter's own jobs. Ownership is always resolved as
+/// Recruiter-side view of, and status control over, applications submitted
+/// to the recruiter's own jobs. Ownership is always resolved as
 /// <c>RecruiterProfile → owned Job → JobApplication</c> — deliberately NOT
 /// <see cref="ApplicationEndpoints"/>'s candidate-scoped lookup, which proves
 /// ownership via <see cref="JobApplication.CandidateProfileId"/>, the wrong
-/// chain for a recruiter. Every single-item query scopes by both the route
-/// id and a join back to the caller's own <see cref="RecruiterProfile"/> in
-/// the same query, so an application behind a job the caller doesn't own is
-/// indistinguishable from one that doesn't exist (404, never 403). Status
-/// changes are explicitly out of scope here — see Phase 3.3.
+/// chain for a recruiter. Every single-item query (read or status update)
+/// scopes by both the route id and a join back to the caller's own
+/// <see cref="RecruiterProfile"/> in the same query, so an application
+/// behind a job the caller doesn't own is indistinguishable from one that
+/// doesn't exist (404, never 403). The candidate-facing side
+/// (<see cref="ApplicationEndpoints"/>) has no write path for status at
+/// all — only this recruiter-owned-job chain can ever change it.
 /// </summary>
 public static class RecruiterApplicationEndpoints
 {
@@ -40,6 +42,10 @@ public static class RecruiterApplicationEndpoints
         group.MapGet("/applications/{id:guid}/resume", DownloadResumeAsync)
             .WithName("DownloadRecruiterApplicationResume")
             .WithSummary("The resume attached to an application on one of the signed-in recruiter's own jobs.");
+
+        group.MapPut("/applications/{id:guid}/status", UpdateStatusAsync)
+            .WithName("UpdateRecruiterApplicationStatus")
+            .WithSummary("Change the status of an application on one of the signed-in recruiter's own jobs.");
 
         return app;
     }
@@ -140,6 +146,44 @@ public static class RecruiterApplicationEndpoints
         }
 
         return Results.File(stream, application.ResumeContentType, application.ResumeOriginalFileName);
+    }
+
+    private static async Task<IResult> UpdateStatusAsync(
+        Guid id, UpdateApplicationStatusRequest request, ClaimsPrincipal principal, IApplicationDbContext db, CancellationToken cancellationToken)
+    {
+        var user = await principal.GetCurrentUserAsync(db, cancellationToken);
+        if (user is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        // Ownership-scoped lookup is tracked (no AsNoTracking), so mutating
+        // Status below and calling SaveChangesAsync is enough — no separate
+        // Update() call needed.
+        var application = await FindRecruiterOwnedApplicationAsync(db, user.Id, id, cancellationToken);
+        if (application is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!Enum.TryParse<JobApplicationStatus>(request.Status, ignoreCase: true, out var status) || !Enum.IsDefined(status))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["status"] = ["Not a valid application status."],
+            });
+        }
+
+        application.Status = status;
+        await db.SaveChangesAsync(cancellationToken);
+
+        var applicant = await FindApplicantAsync(db, application.CandidateProfileId, cancellationToken);
+        if (applicant is null)
+        {
+            return Results.NotFound();
+        }
+
+        return Results.Ok(ToResponse(application, applicant));
     }
 
     // ----------------------------------------------------------------- shared ---

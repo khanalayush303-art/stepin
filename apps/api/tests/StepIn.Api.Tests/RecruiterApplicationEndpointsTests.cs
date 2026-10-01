@@ -7,12 +7,12 @@ using StepIn.Api.Endpoints;
 namespace StepIn.Api.Tests;
 
 /// <summary>
-/// Exercises the recruiter-side, read-only application-review endpoints
-/// against the same real Clerk-token-validation → user-sync → authorization
-/// pipeline <see cref="AuthEndpointsTests"/> uses (see <see cref="AuthApiFactory"/>).
-/// The central concern of this file is proving the
-/// RecruiterProfile → owned Job → JobApplication ownership chain —
-/// deliberately distinct from <see cref="ApplicationEndpointsTests"/>'s
+/// Exercises the recruiter-side application-review and status-update
+/// endpoints against the same real Clerk-token-validation → user-sync →
+/// authorization pipeline <see cref="AuthEndpointsTests"/> uses (see
+/// <see cref="AuthApiFactory"/>). The central concern of this file is
+/// proving the RecruiterProfile → owned Job → JobApplication ownership
+/// chain — deliberately distinct from <see cref="ApplicationEndpointsTests"/>'s
 /// candidate-scoped ownership tests.
 /// </summary>
 public sealed class RecruiterApplicationEndpointsTests(AuthApiFactory factory) : IClassFixture<AuthApiFactory>
@@ -311,5 +311,127 @@ public sealed class RecruiterApplicationEndpointsTests(AuthApiFactory factory) :
         raw.Should().NotContain("recruiterProfileId", "the recruiter DTO has no such property");
         raw.Should().NotContain("resumeStorageKey", "only the display filename is exposed, never the opaque storage key");
         raw.Should().NotContain("/app/", "no physical filesystem path is ever returned");
+    }
+
+    // ----------------------------------------------------------------- status update ---
+
+    [Fact]
+    public async Task Status_update_without_a_token_is_unauthorized()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+
+        using var request = BuildRequest(HttpMethod.Put, $"/api/v1/recruiter/applications/{Guid.NewGuid()}/status", null, new UpdateApplicationStatusRequest("Reviewed"));
+        var response = await client.SendAsync(request, ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task Applicant_cannot_update_an_application_status()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var applicantToken = await IssueApplicantWithProfileTokenAsync(ct);
+
+        using var request = BuildRequest(HttpMethod.Put, $"/api/v1/recruiter/applications/{Guid.NewGuid()}/status", applicantToken, new UpdateApplicationStatusRequest("Reviewed"));
+        var response = await client.SendAsync(request, ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Recruiter_can_update_the_status_of_an_application_on_their_own_job_and_it_persists()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var recruiterToken = await IssueRecruiterWithCompanyTokenAsync(ct, "Acme Pty Ltd");
+        var job = await CreateAndPublishJobAsync(client, recruiterToken, null, ct);
+        var applicantToken = await IssueApplicantWithProfileTokenAsync(ct);
+        var application = await SubmitApplicationAsync(client, applicantToken, job.Id, ct);
+
+        using var update = BuildRequest(
+            HttpMethod.Put, $"/api/v1/recruiter/applications/{application.Id}/status", recruiterToken, new UpdateApplicationStatusRequest("Shortlisted"));
+        var updateResponse = await client.SendAsync(update, ct);
+        updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var updated = await updateResponse.Content.ReadFromJsonAsync<RecruiterApplicationResponse>(ct);
+        updated!.Status.Should().Be("Shortlisted");
+
+        // A subsequent read reflects the persisted change, not just the response of the write itself.
+        using var reread = BuildRequest(HttpMethod.Get, $"/api/v1/recruiter/applications/{application.Id}", recruiterToken);
+        var rereadResponse = await client.SendAsync(reread, ct);
+        (await rereadResponse.Content.ReadFromJsonAsync<RecruiterApplicationResponse>(ct))!.Status.Should().Be("Shortlisted");
+    }
+
+    [Fact]
+    public async Task Recruiter_A_cannot_update_the_status_of_recruiter_Bs_application()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var recruiterA = await IssueRecruiterWithCompanyTokenAsync(ct, "Company A");
+        var recruiterB = await IssueRecruiterWithCompanyTokenAsync(ct, "Company B");
+        var jobB = await CreateAndPublishJobAsync(client, recruiterB, ValidCreateRequest("Job B"), ct);
+        var applicantToken = await IssueApplicantWithProfileTokenAsync(ct);
+        var applicationB = await SubmitApplicationAsync(client, applicantToken, jobB.Id, ct);
+
+        using var updateAsA = BuildRequest(
+            HttpMethod.Put, $"/api/v1/recruiter/applications/{applicationB.Id}/status", recruiterA, new UpdateApplicationStatusRequest("Rejected"));
+        (await client.SendAsync(updateAsA, ct)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        // B's application is completely unaffected by A's rejected attempt.
+        using var reread = BuildRequest(HttpMethod.Get, $"/api/v1/recruiter/applications/{applicationB.Id}", recruiterB);
+        var rereadResponse = await client.SendAsync(reread, ct);
+        (await rereadResponse.Content.ReadFromJsonAsync<RecruiterApplicationResponse>(ct))!.Status.Should().Be("Submitted");
+    }
+
+    [Fact]
+    public async Task Invalid_status_value_is_rejected_and_does_not_change_the_stored_status()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var recruiterToken = await IssueRecruiterWithCompanyTokenAsync(ct, "Acme Pty Ltd");
+        var job = await CreateAndPublishJobAsync(client, recruiterToken, null, ct);
+        var applicantToken = await IssueApplicantWithProfileTokenAsync(ct);
+        var application = await SubmitApplicationAsync(client, applicantToken, job.Id, ct);
+
+        using var update = BuildRequest(
+            HttpMethod.Put, $"/api/v1/recruiter/applications/{application.Id}/status", recruiterToken, new UpdateApplicationStatusRequest("Hired"));
+        var response = await client.SendAsync(update, ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        using var reread = BuildRequest(HttpMethod.Get, $"/api/v1/recruiter/applications/{application.Id}", recruiterToken);
+        var rereadResponse = await client.SendAsync(reread, ct);
+        (await rereadResponse.Content.ReadFromJsonAsync<RecruiterApplicationResponse>(ct))!.Status.Should().Be("Submitted");
+    }
+
+    [Fact]
+    public async Task Missing_request_body_on_status_update_is_rejected()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var recruiterToken = await IssueRecruiterWithCompanyTokenAsync(ct, "Acme Pty Ltd");
+        var job = await CreateAndPublishJobAsync(client, recruiterToken, null, ct);
+        var applicantToken = await IssueApplicantWithProfileTokenAsync(ct);
+        var application = await SubmitApplicationAsync(client, applicantToken, job.Id, ct);
+
+        using var update = BuildRequest(HttpMethod.Put, $"/api/v1/recruiter/applications/{application.Id}/status", recruiterToken, body: null);
+        var response = await client.SendAsync(update, ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Unknown_application_id_on_status_update_returns_404_for_a_real_recruiter()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var recruiterToken = await IssueRecruiterWithCompanyTokenAsync(ct, "Acme Pty Ltd");
+
+        using var update = BuildRequest(
+            HttpMethod.Put, $"/api/v1/recruiter/applications/{Guid.NewGuid()}/status", recruiterToken, new UpdateApplicationStatusRequest("Reviewed"));
+        var response = await client.SendAsync(update, ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 }

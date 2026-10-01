@@ -6,15 +6,16 @@ import { useParams } from "next/navigation";
 import { Building2, Clock, Download, FileText, LayoutDashboard, Mail, User, Users } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
 import { Alert } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DashboardShell, type DashboardNavItem } from "@/components/dashboard/dashboard-shell";
 import { ApiError, formError } from "@/lib/auth/client";
-import { downloadRecruiterResume, getRecruiterApplication } from "@/lib/applications/api";
-import type { RecruiterApplication } from "@/lib/applications/types";
+import { downloadRecruiterResume, getRecruiterApplication, updateRecruiterApplicationStatus } from "@/lib/applications/api";
+import { APPLICATION_STATUSES, type ApplicationStatus, type RecruiterApplication } from "@/lib/applications/types";
 import { formatDate } from "@/lib/utils";
+import { ApplicationStatusBadge } from "../_components/application-status-badge";
 
 const NAV: DashboardNavItem[] = [
   { href: "/recruiter", label: "Overview", icon: LayoutDashboard },
@@ -34,6 +35,9 @@ export default function RecruiterApplicationDetailPage() {
   const [notFound, setNotFound] = React.useState(false);
   const [downloading, setDownloading] = React.useState(false);
   const [downloadError, setDownloadError] = React.useState<string>();
+  const [statusDraft, setStatusDraft] = React.useState<ApplicationStatus>("Submitted");
+  const [updatingStatus, setUpdatingStatus] = React.useState(false);
+  const [statusError, setStatusError] = React.useState<string>();
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -41,7 +45,9 @@ export default function RecruiterApplicationDetailPage() {
     setNotFound(false);
     try {
       const token = await getToken();
-      setApplication(await getRecruiterApplication(token, params.id));
+      const loaded = await getRecruiterApplication(token, params.id);
+      setApplication(loaded);
+      setStatusDraft(loaded.status);
     } catch (error) {
       if (error instanceof ApiError && error.status === 404) {
         setNotFound(true);
@@ -71,6 +77,32 @@ export default function RecruiterApplicationDetailPage() {
       setDownloadError(formError(error));
     } finally {
       setDownloading(false);
+    }
+  }
+
+  async function onUpdateStatus() {
+    if (!application || statusDraft === application.status) return;
+
+    setUpdatingStatus(true);
+    setStatusError(undefined);
+    try {
+      const token = await getToken();
+      const updated = await updateRecruiterApplicationStatus(token, application.id, statusDraft);
+      // Only reflect the change once the server confirms it — never update
+      // the displayed status optimistically.
+      setApplication(updated);
+      setStatusDraft(updated.status);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        setStatusError("This application is no longer available.");
+      } else {
+        setStatusError(formError(error));
+      }
+      // Revert the draft back to the last known-good status on failure, so
+      // the picker never silently shows a status the server rejected.
+      setStatusDraft(application.status);
+    } finally {
+      setUpdatingStatus(false);
     }
   }
 
@@ -120,16 +152,48 @@ export default function RecruiterApplicationDetailPage() {
                   </p>
                 </div>
               </div>
-              {/* Read-only in Phase 3.2 — status transitions are Phase 3.3. */}
-              <Badge tone="info" variant="subtle" showDot>
-                {application.status}
-              </Badge>
+              <ApplicationStatusBadge status={application.status} />
             </div>
 
             <p className="text-small text-foreground-secondary">
               Applied for <span className="font-medium text-foreground">{application.jobTitle}</span>
             </p>
             <p className="text-caption text-muted-foreground">Submitted {formatDate(application.createdAt)}</p>
+
+            <div className="space-y-2 border-t border-border pt-4">
+              <p className="text-small font-medium text-foreground">Status</p>
+              {statusError ? (
+                <Alert tone="error" title="Couldn't update status">
+                  {statusError}
+                </Alert>
+              ) : null}
+              <div className="flex flex-wrap items-center gap-3">
+                <Select
+                  value={statusDraft}
+                  onValueChange={(value) => setStatusDraft(value as ApplicationStatus)}
+                  disabled={updatingStatus}
+                >
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {APPLICATION_STATUSES.map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {value}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  size="sm"
+                  loading={updatingStatus}
+                  disabled={statusDraft === application.status}
+                  onClick={() => void onUpdateStatus()}
+                >
+                  Update status
+                </Button>
+              </div>
+            </div>
 
             {application.coverLetter ? (
               <div className="space-y-2">

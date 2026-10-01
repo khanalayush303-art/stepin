@@ -2,6 +2,7 @@ import { apiClient, ApiError } from "@/lib/auth/client";
 import type {
   Application,
   ApplicationEligibility,
+  ApplicationStatus,
   ApplicationSummary,
   RecruiterApplication,
   RecruiterApplicationSummary,
@@ -67,9 +68,8 @@ export function downloadResume(token: string | null, applicationId: string, file
 }
 
 // ------------------------------------------------------------- recruiter ---
-// Read-only in Phase 3.2 — no status-change call exists here yet; that's
-// Phase 3.3. Ownership (recruiter must own the job) is enforced entirely
-// server-side; these calls carry no client-side authorization logic.
+// Ownership (recruiter must own the job) is enforced entirely server-side;
+// these calls carry no client-side authorization logic.
 
 export function listRecruiterApplicationsForJob(token: string | null, jobId: string) {
   return apiClient.get<RecruiterApplicationSummary[]>(`${RECRUITER_BASE}/jobs/${jobId}/applications`, token);
@@ -81,4 +81,8 @@ export function getRecruiterApplication(token: string | null, id: string) {
 
 export function downloadRecruiterResume(token: string | null, applicationId: string, fileName: string) {
   return downloadFile(`${RECRUITER_BASE}/applications/${applicationId}/resume`, token, fileName);
+}
+
+export function updateRecruiterApplicationStatus(token: string | null, id: string, status: ApplicationStatus) {
+  return apiClient.put<RecruiterApplication>(`${RECRUITER_BASE}/applications/${id}/status`, token, { status });
 }

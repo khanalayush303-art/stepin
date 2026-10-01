@@ -3,7 +3,10 @@
  * (apps/api/src/StepIn.Api/Endpoints/ApplicationContracts.cs).
  */
 
-export type ApplicationStatus = "Submitted";
+export type ApplicationStatus = "Submitted" | "Reviewed" | "Shortlisted" | "Rejected";
+
+/** The same four values as ApplicationStatus, for iterating a status picker. */
+export const APPLICATION_STATUSES: ApplicationStatus[] = ["Submitted", "Reviewed", "Shortlisted", "Rejected"];
 
 export interface ApplicationSummary {
   id: string;

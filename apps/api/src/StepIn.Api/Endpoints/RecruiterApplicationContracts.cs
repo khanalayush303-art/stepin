@@ -29,3 +29,11 @@ public sealed record RecruiterApplicationResponse(
     string? CoverLetter,
     string ResumeFileName,
     DateTimeOffset CreatedAt);
+
+/// <summary>
+/// Deliberately the only field — no JobId/CandidateProfileId/RecruiterProfileId
+/// can be supplied; the application being changed is identified entirely by
+/// the route's {id}, resolved and ownership-checked server-side. See
+/// <see cref="RecruiterApplicationEndpoints"/>.
+/// </summary>
+public sealed record UpdateApplicationStatusRequest(string Status);

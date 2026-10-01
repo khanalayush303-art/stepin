@@ -6,7 +6,6 @@ import { useSearchParams } from "next/navigation";
 import { Briefcase, Building2, Clock, FileText, LayoutDashboard, Users } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
 import { Alert } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -18,6 +17,7 @@ import type { RecruiterApplicationSummary } from "@/lib/applications/types";
 import { listJobs } from "@/lib/jobs/api";
 import type { JobSummary } from "@/lib/jobs/types";
 import { formatDate } from "@/lib/utils";
+import { ApplicationStatusBadge } from "./_components/application-status-badge";
 
 const NAV: DashboardNavItem[] = [
   { href: "/recruiter", label: "Overview", icon: LayoutDashboard },
@@ -200,9 +200,7 @@ function RecruiterApplicationsView() {
                           {application.applicantEmail} &middot; applied {formatDate(application.createdAt)}
                         </p>
                       </div>
-                      <Badge tone="info" variant="subtle" showDot>
-                        {application.status}
-                      </Badge>
+                      <ApplicationStatusBadge status={application.status} />
                       <Button variant="outline" size="sm" asChild>
                         <Link href={`/recruiter/applications/${application.id}`}>View</Link>
                       </Button>

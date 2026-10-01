@@ -22,10 +22,12 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DashboardShell, type DashboardNavItem } from "@/components/dashboard/dashboard-shell";
+import { SaveJobButton } from "@/components/jobs/save-job-button";
 import { ApiError, formError } from "@/lib/auth/client";
 import { getApplicationEligibility } from "@/lib/applications/api";
 import { getPublicJob } from "@/lib/jobs/api";
 import type { PublicJob } from "@/lib/jobs/types";
+import { listSavedJobs } from "@/lib/savedJobs/api";
 import { formatDate } from "@/lib/utils";
 
 const NAV: DashboardNavItem[] = [
@@ -47,6 +49,7 @@ export default function JobDetailsPage() {
   const [notFound, setNotFound] = React.useState(false);
   const [hasApplied, setHasApplied] = React.useState(false);
   const [existingApplicationId, setExistingApplicationId] = React.useState<string>();
+  const [isSaved, setIsSaved] = React.useState(false);
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -60,6 +63,18 @@ export default function JobDetailsPage() {
       setJob(loadedJob);
       setHasApplied(eligibility.hasApplied);
       setExistingApplicationId(eligibility.applicationId ?? undefined);
+
+      // No single-job saved-state endpoint exists, so membership is checked
+      // against the full saved-jobs list — same constraint documented on
+      // SaveJobButton. Best-effort and separate from the error path above:
+      // a failure here shouldn't block the rest of the page from loading.
+      try {
+        const token = await getToken();
+        const saved = await listSavedJobs(token);
+        setIsSaved(saved.some((s) => s.jobId === params.id));
+      } catch {
+        setIsSaved(false);
+      }
     } catch (error) {
       if (error instanceof ApiError && error.status === 404) {
         setNotFound(true);
@@ -143,15 +158,18 @@ export default function JobDetailsPage() {
                     <p className="text-small text-muted-foreground">Compensation not listed</p>
                   )}
                 </div>
-                {hasApplied ? (
-                  <Button variant="outline" asChild>
-                    <Link href={`/dashboard/applications/${existingApplicationId}`}>Already applied &middot; View application</Link>
-                  </Button>
-                ) : (
-                  <Button asChild>
-                    <Link href={`/dashboard/discover/${job.id}/apply`}>Apply</Link>
-                  </Button>
-                )}
+                <div className="flex items-center gap-2">
+                  <SaveJobButton jobId={job.id} saved={isSaved} onSavedChange={setIsSaved} />
+                  {hasApplied ? (
+                    <Button variant="outline" asChild>
+                      <Link href={`/dashboard/applications/${existingApplicationId}`}>Already applied &middot; View application</Link>
+                    </Button>
+                  ) : (
+                    <Button asChild>
+                      <Link href={`/dashboard/discover/${job.id}/apply`}>Apply</Link>
+                    </Button>
+                  )}
+                </div>
               </div>
 
               <div className="space-y-2">

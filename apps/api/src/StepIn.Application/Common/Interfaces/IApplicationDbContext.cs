@@ -32,6 +32,8 @@ public interface IApplicationDbContext
 
     IQueryable<JobApplication> JobApplications { get; }
 
+    IQueryable<SavedJob> SavedJobs { get; }
+
     /// <summary>Tracks a new entity for insertion on the next <see cref="SaveChangesAsync"/>.</summary>
     void Add<TEntity>(TEntity entity)
         where TEntity : class;

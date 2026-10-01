@@ -36,6 +36,8 @@ public sealed class ApplicationDbContext(
 
     public DbSet<JobApplication> JobApplications => Set<JobApplication>();
 
+    public DbSet<SavedJob> SavedJobs => Set<SavedJob>();
+
     IQueryable<ApplicationUser> IApplicationDbContext.Users => Users;
 
     IQueryable<CandidateProfile> IApplicationDbContext.CandidateProfiles => CandidateProfiles;
@@ -53,6 +55,8 @@ public sealed class ApplicationDbContext(
     IQueryable<Job> IApplicationDbContext.Jobs => Jobs;
 
     IQueryable<JobApplication> IApplicationDbContext.JobApplications => JobApplications;
+
+    IQueryable<SavedJob> IApplicationDbContext.SavedJobs => SavedJobs;
 
     void IApplicationDbContext.Add<TEntity>(TEntity entity) => Set<TEntity>().Add(entity);
 

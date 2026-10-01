@@ -63,6 +63,7 @@ export const apiClient = {
     }),
   postForm: <T>(path: string, token: string | null, formData: FormData): Promise<T> =>
     request<T>(path, token, { method: "POST", body: formData }),
+  delete: <T = void>(path: string, token: string | null): Promise<T> => request<T>(path, token, { method: "DELETE" }),
 };
 
 export function formError(error: unknown): string {

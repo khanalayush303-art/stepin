@@ -14,6 +14,7 @@ import {
   Search,
   User,
 } from "lucide-react";
+import { useAuth } from "@clerk/nextjs";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -22,9 +23,11 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DashboardShell, type DashboardNavItem } from "@/components/dashboard/dashboard-shell";
+import { SaveJobButton } from "@/components/jobs/save-job-button";
 import { formError } from "@/lib/auth/client";
 import { listPublicJobs } from "@/lib/jobs/api";
 import type { EmploymentType, JobFilters, PublicJobSummary, WorkplaceType } from "@/lib/jobs/types";
+import { listSavedJobs } from "@/lib/savedJobs/api";
 import { formatDate } from "@/lib/utils";
 
 const NAV: DashboardNavItem[] = [
@@ -57,6 +60,7 @@ const ANY = "any";
 const EMPTY_FILTERS: JobFilters = {};
 
 export default function DiscoverRolesPage() {
+  const { getToken } = useAuth();
   const [appliedFilters, setAppliedFilters] = React.useState<JobFilters>(EMPTY_FILTERS);
   const [searchDraft, setSearchDraft] = React.useState("");
   const [locationDraft, setLocationDraft] = React.useState("");
@@ -66,6 +70,7 @@ export default function DiscoverRolesPage() {
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string>();
   const [jobs, setJobs] = React.useState<PublicJobSummary[]>([]);
+  const [savedJobIds, setSavedJobIds] = React.useState<Set<string>>(new Set());
 
   const load = React.useCallback(async (filters: JobFilters) => {
     setLoading(true);
@@ -87,6 +92,35 @@ export default function DiscoverRolesPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load(appliedFilters);
   }, [load, appliedFilters]);
+
+  React.useEffect(() => {
+    // Independent of job filters — the candidate's saved-job set doesn't
+    // change when the search/filter form is submitted, so this only needs
+    // to run once on mount. No single-job saved-state endpoint exists, so
+    // membership is checked against the full saved-jobs list, same
+    // constraint documented on SaveJobButton.
+    async function loadSaved() {
+      try {
+        const token = await getToken();
+        const saved = await listSavedJobs(token);
+        setSavedJobIds(new Set(saved.map((s) => s.jobId)));
+      } catch {
+        // Best-effort: every job's bookmark just starts in the "not saved"
+        // state if this fails, rather than blocking the whole page.
+      }
+    }
+
+    void loadSaved();
+  }, [getToken]);
+
+  function onSavedChange(jobId: string, saved: boolean) {
+    setSavedJobIds((current) => {
+      const next = new Set(current);
+      if (saved) next.add(jobId);
+      else next.delete(jobId);
+      return next;
+    });
+  }
 
   function onSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -253,11 +287,18 @@ export default function DiscoverRolesPage() {
                       ) : null}
                       <p className="text-caption text-muted-foreground">Posted {formatDate(job.publishedAt)}</p>
                     </div>
-                    <Button size="sm" variant="outline" asChild className="relative z-10">
-                      <Link href={`/dashboard/discover/${job.id}`} tabIndex={-1}>
-                        View role
-                      </Link>
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <SaveJobButton
+                        jobId={job.id}
+                        saved={savedJobIds.has(job.id)}
+                        onSavedChange={(saved) => onSavedChange(job.id, saved)}
+                      />
+                      <Button size="sm" variant="outline" asChild className="relative z-10">
+                        <Link href={`/dashboard/discover/${job.id}`} tabIndex={-1}>
+                          View role
+                        </Link>
+                      </Button>
+                    </div>
                   </div>
                 </Card>
               </li>

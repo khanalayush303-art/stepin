@@ -278,6 +278,11 @@ public static class ApplicationEndpoints
             .FirstOrDefaultAsync(a => a.Id == applicationId && a.CandidateProfileId == candidateProfile.Id, cancellationToken);
     }
 
+    // StatusUpdatedAt reuses Entity.UpdatedAt rather than a dedicated column:
+    // Status is the only field ever mutated after creation (see this class's
+    // own type-level doc comment — applications are otherwise immutable), so
+    // UpdatedAt is, in practice, exactly "when the status last changed". Falls
+    // back to CreatedAt for an application whose status has never changed.
     private static ApplicationResponse ToResponse(JobApplication application) => new(
         application.Id,
         application.JobId,
@@ -286,7 +291,8 @@ public static class ApplicationEndpoints
         application.Status.ToString(),
         application.CoverLetter,
         application.ResumeOriginalFileName,
-        application.CreatedAt);
+        application.CreatedAt,
+        application.UpdatedAt ?? application.CreatedAt);
 
     private static Dictionary<string, string[]> ValidateResume(IFormFile? resume)
     {

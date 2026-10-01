@@ -27,6 +27,7 @@ export interface Application {
   coverLetter: string | null;
   resumeFileName: string;
   createdAt: string;
+  statusUpdatedAt: string;
 }
 
 export interface ApplicationEligibility {
@@ -61,4 +62,14 @@ export interface RecruiterApplication {
   coverLetter: string | null;
   resumeFileName: string;
   createdAt: string;
+  statusUpdatedAt: string;
+}
+
+export type ApplicationSort = "newest" | "oldest";
+
+/** Mirrors the shape of JobFilters in lib/jobs/types.ts — same "omit to mean unfiltered" convention. */
+export interface RecruiterApplicationFilters {
+  status?: ApplicationStatus;
+  search?: string;
+  sort?: ApplicationSort;
 }

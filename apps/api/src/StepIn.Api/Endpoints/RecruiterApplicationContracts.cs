@@ -28,7 +28,8 @@ public sealed record RecruiterApplicationResponse(
     string Status,
     string? CoverLetter,
     string ResumeFileName,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    DateTimeOffset StatusUpdatedAt);
 
 /// <summary>
 /// Deliberately the only field — no JobId/CandidateProfileId/RecruiterProfileId

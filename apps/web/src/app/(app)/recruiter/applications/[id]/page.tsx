@@ -158,7 +158,10 @@ export default function RecruiterApplicationDetailPage() {
             <p className="text-small text-foreground-secondary">
               Applied for <span className="font-medium text-foreground">{application.jobTitle}</span>
             </p>
-            <p className="text-caption text-muted-foreground">Submitted {formatDate(application.createdAt)}</p>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-caption text-muted-foreground">
+              <span>Submitted {formatDate(application.createdAt)}</span>
+              <span>Status last updated {formatDate(application.statusUpdatedAt)}</span>
+            </div>
 
             <div className="space-y-2 border-t border-border pt-4">
               <p className="text-small font-medium text-foreground">Status</p>

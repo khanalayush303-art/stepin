@@ -5,6 +5,7 @@ import type {
   ApplicationStatus,
   ApplicationSummary,
   RecruiterApplication,
+  RecruiterApplicationFilters,
   RecruiterApplicationSummary,
 } from "./types";
 
@@ -71,8 +72,14 @@ export function downloadResume(token: string | null, applicationId: string, file
 // Ownership (recruiter must own the job) is enforced entirely server-side;
 // these calls carry no client-side authorization logic.
 
-export function listRecruiterApplicationsForJob(token: string | null, jobId: string) {
-  return apiClient.get<RecruiterApplicationSummary[]>(`${RECRUITER_BASE}/jobs/${jobId}/applications`, token);
+export function listRecruiterApplicationsForJob(token: string | null, jobId: string, filters: RecruiterApplicationFilters = {}) {
+  const params = new URLSearchParams();
+  if (filters.status) params.set("status", filters.status);
+  if (filters.search) params.set("search", filters.search);
+  if (filters.sort) params.set("sort", filters.sort);
+
+  const query = params.toString();
+  return apiClient.get<RecruiterApplicationSummary[]>(`${RECRUITER_BASE}/jobs/${jobId}/applications${query ? `?${query}` : ""}`, token);
 }
 
 export function getRecruiterApplication(token: string | null, id: string) {

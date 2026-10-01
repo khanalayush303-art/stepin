@@ -3,21 +3,28 @@
 import * as React from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Briefcase, Building2, Clock, FileText, LayoutDashboard, Users } from "lucide-react";
+import { Briefcase, Building2, Clock, FileText, LayoutDashboard, Search, Users } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DashboardShell, type DashboardNavItem } from "@/components/dashboard/dashboard-shell";
 import { ApiError, formError } from "@/lib/auth/client";
 import { listRecruiterApplicationsForJob } from "@/lib/applications/api";
-import type { RecruiterApplicationSummary } from "@/lib/applications/types";
+import { APPLICATION_STATUSES, type ApplicationSort, type ApplicationStatus, type RecruiterApplicationFilters, type RecruiterApplicationSummary } from "@/lib/applications/types";
 import { listJobs } from "@/lib/jobs/api";
 import type { JobSummary } from "@/lib/jobs/types";
 import { formatDate } from "@/lib/utils";
 import { ApplicationStatusBadge } from "@/components/applications/application-status-badge";
+
+/** Radix Select can't carry an empty-string item value, so "no status filter" gets its own sentinel — same convention as dashboard/discover/page.tsx. */
+const ANY_STATUS = "any";
+
+const EMPTY_FILTERS: RecruiterApplicationFilters = {};
 
 const NAV: DashboardNavItem[] = [
   { href: "/recruiter", label: "Overview", icon: LayoutDashboard },
@@ -41,6 +48,11 @@ function RecruiterApplicationsView() {
   const [notFound, setNotFound] = React.useState(false);
   const [applications, setApplications] = React.useState<RecruiterApplicationSummary[]>([]);
 
+  const [appliedFilters, setAppliedFilters] = React.useState<RecruiterApplicationFilters>(EMPTY_FILTERS);
+  const [statusDraft, setStatusDraft] = React.useState<ApplicationStatus | typeof ANY_STATUS>(ANY_STATUS);
+  const [searchDraft, setSearchDraft] = React.useState("");
+  const [sortDraft, setSortDraft] = React.useState<ApplicationSort>("newest");
+
   const loadJobs = React.useCallback(async () => {
     setJobsLoading(true);
     setJobsError(undefined);
@@ -55,13 +67,13 @@ function RecruiterApplicationsView() {
   }, [getToken]);
 
   const loadApplications = React.useCallback(
-    async (id: string) => {
+    async (id: string, filters: RecruiterApplicationFilters) => {
       setAppsLoading(true);
       setAppsError(undefined);
       setNotFound(false);
       try {
         const token = await getToken();
-        setApplications(await listRecruiterApplicationsForJob(token, id));
+        setApplications(await listRecruiterApplicationsForJob(token, id, filters));
       } catch (error) {
         if (error instanceof ApiError && error.status === 404) {
           setNotFound(true);
@@ -82,9 +94,40 @@ function RecruiterApplicationsView() {
   }, [loadJobs]);
 
   React.useEffect(() => {
+    // Reset any filters left over from a previously-viewed job — a filter
+    // chosen for one job's applications shouldn't silently carry over to the next.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (jobId) void loadApplications(jobId);
-  }, [jobId, loadApplications]);
+    setStatusDraft(ANY_STATUS);
+    setSearchDraft("");
+    setSortDraft("newest");
+    setAppliedFilters(EMPTY_FILTERS);
+  }, [jobId]);
+
+  React.useEffect(() => {
+    // Fetch-on-mount, and again whenever appliedFilters changes (Search
+    // button/Enter, not live-as-you-type): same documented pattern as
+    // dashboard/discover/page.tsx's job search.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (jobId) void loadApplications(jobId, appliedFilters);
+  }, [jobId, appliedFilters, loadApplications]);
+
+  function onFilterSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setAppliedFilters({
+      status: statusDraft === ANY_STATUS ? undefined : statusDraft,
+      search: searchDraft.trim() || undefined,
+      sort: sortDraft,
+    });
+  }
+
+  function onFilterClear() {
+    setStatusDraft(ANY_STATUS);
+    setSearchDraft("");
+    setSortDraft("newest");
+    setAppliedFilters(EMPTY_FILTERS);
+  }
+
+  const hasActiveFilters = Boolean(appliedFilters.status || appliedFilters.search || (appliedFilters.sort && appliedFilters.sort !== "newest"));
 
   const selectedJob = jobs.find((job) => job.id === jobId);
 
@@ -160,6 +203,55 @@ function RecruiterApplicationsView() {
               <p className="text-body text-muted-foreground">Applications submitted to this role.</p>
             </div>
 
+            {notFound ? null : (
+              <Card className="p-4">
+                <form onSubmit={onFilterSubmit} className="flex flex-wrap items-end gap-3">
+                  <div className="min-w-[200px] flex-1">
+                    <label htmlFor="candidate-search" className="sr-only">
+                      Search candidates
+                    </label>
+                    <Input
+                      id="candidate-search"
+                      value={searchDraft}
+                      onChange={(e) => setSearchDraft(e.target.value)}
+                      placeholder="Search candidates..."
+                    />
+                  </div>
+                  <Select value={statusDraft} onValueChange={(v) => setStatusDraft(v as ApplicationStatus | typeof ANY_STATUS)}>
+                    <SelectTrigger className="w-[160px]">
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ANY_STATUS}>All statuses</SelectItem>
+                      {APPLICATION_STATUSES.map((value) => (
+                        <SelectItem key={value} value={value}>
+                          {value}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={sortDraft} onValueChange={(v) => setSortDraft(v as ApplicationSort)}>
+                    <SelectTrigger className="w-[140px]">
+                      <SelectValue placeholder="Sort" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="newest">Newest</SelectItem>
+                      <SelectItem value="oldest">Oldest</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button type="submit">
+                    <Search />
+                    Apply
+                  </Button>
+                  {hasActiveFilters ? (
+                    <Button type="button" variant="ghost" onClick={onFilterClear}>
+                      Clear
+                    </Button>
+                  ) : null}
+                </form>
+              </Card>
+            )}
+
             {appsLoading ? (
               <div className="space-y-3">
                 <Skeleton className="h-16 w-full" />
@@ -173,7 +265,7 @@ function RecruiterApplicationsView() {
               <Alert tone="error" title="Couldn't load applications">
                 {appsError}
                 <div className="mt-3">
-                  <Button type="button" variant="outline" size="sm" onClick={() => void loadApplications(jobId)}>
+                  <Button type="button" variant="outline" size="sm" onClick={() => void loadApplications(jobId, appliedFilters)}>
                     Try again
                   </Button>
                 </div>
@@ -181,8 +273,19 @@ function RecruiterApplicationsView() {
             ) : applications.length === 0 ? (
               <EmptyState
                 icon={<Users className="size-6" />}
-                title="No applications yet"
-                description="Check back once candidates start applying to this role."
+                title={hasActiveFilters ? "No applications match these filters" : "No applications yet"}
+                description={
+                  hasActiveFilters
+                    ? "Try a different status, search term, or clear your filters."
+                    : "Check back once candidates start applying to this role."
+                }
+                action={
+                  hasActiveFilters ? (
+                    <Button type="button" variant="outline" onClick={onFilterClear}>
+                      Clear filters
+                    </Button>
+                  ) : undefined
+                }
               />
             ) : (
               <Card className="p-6">

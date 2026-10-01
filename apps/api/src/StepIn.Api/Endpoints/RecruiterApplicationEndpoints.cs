@@ -51,12 +51,27 @@ public static class RecruiterApplicationEndpoints
     }
 
     private static async Task<IResult> ListApplicationsForJobAsync(
-        Guid jobId, ClaimsPrincipal principal, IApplicationDbContext db, CancellationToken cancellationToken)
+        Guid jobId,
+        string? status,
+        string? search,
+        string? sort,
+        ClaimsPrincipal principal,
+        IApplicationDbContext db,
+        CancellationToken cancellationToken)
     {
         var user = await principal.GetCurrentUserAsync(db, cancellationToken);
         if (user is null)
         {
             return Results.Unauthorized();
+        }
+
+        // Pure input-format validation — touches no data, so doing it before
+        // the ownership gate below leaks nothing about whether the job exists
+        // or is owned by this recruiter.
+        var errors = ValidateListFilters(status, sort, out var parsedStatus, out var oldestFirst);
+        if (errors.Count > 0)
+        {
+            return Results.ValidationProblem(errors);
         }
 
         var recruiterProfile = await FindRecruiterProfileAsync(db, user.Id, cancellationToken);
@@ -68,7 +83,10 @@ public static class RecruiterApplicationEndpoints
         // Ownership gate, resolved separately from the list query itself so a
         // job that doesn't exist and a job owned by another recruiter are both
         // 404 — distinct from "owned job, zero applications yet" (200, []).
-        // Mirrors JobEndpoints.FindOwnedJobAsync's convention exactly.
+        // Mirrors JobEndpoints.FindOwnedJobAsync's convention exactly. This
+        // runs before any status/search/sort filter is applied below, so no
+        // combination of query parameters can ever surface a job — or its
+        // applications — this recruiter doesn't own.
         var jobOwned = await db.Jobs
             .AnyAsync(j => j.Id == jobId && j.RecruiterProfileId == recruiterProfile.Id, cancellationToken);
         if (!jobOwned)
@@ -78,21 +96,42 @@ public static class RecruiterApplicationEndpoints
 
         // Single joined query — no N+1: JobApplications, CandidateProfiles and
         // Users each contribute exactly one join, regardless of row count.
-        var summaries = await (
+        var query =
             from a in db.JobApplications.AsNoTracking()
             join c in db.CandidateProfiles on a.CandidateProfileId equals c.Id
             join u in db.Users on c.UserId equals u.Id
             where a.JobId == jobId
-            orderby a.CreatedAt descending
-            select new RecruiterApplicationSummaryResponse(
-                a.Id,
-                a.JobId,
-                a.Job.Title,
-                u.FirstName + " " + u.LastName,
-                u.Email,
-                a.Status.ToString(),
-                a.ResumeOriginalFileName,
-                a.CreatedAt))
+            select new { Application = a, u.FirstName, u.LastName, u.Email };
+
+        if (parsedStatus is not null)
+        {
+            query = query.Where(x => x.Application.Status == parsedStatus);
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            query = query.Where(x =>
+                EF.Functions.ILike(x.FirstName, $"%{search}%") ||
+                EF.Functions.ILike(x.LastName, $"%{search}%") ||
+                EF.Functions.ILike(x.Email, $"%{search}%"));
+        }
+
+        // Default (sort omitted, or sort=newest) is CreatedAt descending —
+        // byte-for-byte the same ordering the endpoint used before this phase.
+        query = oldestFirst
+            ? query.OrderBy(x => x.Application.CreatedAt)
+            : query.OrderByDescending(x => x.Application.CreatedAt);
+
+        var summaries = await query
+            .Select(x => new RecruiterApplicationSummaryResponse(
+                x.Application.Id,
+                x.Application.JobId,
+                x.Application.Job.Title,
+                x.FirstName + " " + x.LastName,
+                x.Email,
+                x.Application.Status.ToString(),
+                x.Application.ResumeOriginalFileName,
+                x.Application.CreatedAt))
             .ToListAsync(cancellationToken);
 
         return Results.Ok(summaries);
@@ -188,6 +227,51 @@ public static class RecruiterApplicationEndpoints
 
     // ----------------------------------------------------------------- shared ---
 
+    /// <summary>
+    /// Validates and parses the list endpoint's optional status/sort query
+    /// parameters. Pure format validation — same dictionary-of-errors
+    /// convention as <see cref="JobEndpoints.ValidatePublicFilters"/> and
+    /// <see cref="UpdateStatusAsync"/>'s own status parsing — and touches no
+    /// data, so it is safe to run before the ownership gate.
+    /// </summary>
+    private static Dictionary<string, string[]> ValidateListFilters(
+        string? status, string? sort, out JobApplicationStatus? parsedStatus, out bool oldestFirst)
+    {
+        var errors = new Dictionary<string, string[]>();
+        parsedStatus = null;
+        oldestFirst = false;
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            if (!Enum.TryParse<JobApplicationStatus>(status, ignoreCase: true, out var value) || !Enum.IsDefined(value))
+            {
+                errors["status"] = ["Not a valid application status."];
+            }
+            else
+            {
+                parsedStatus = value;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(sort))
+        {
+            if (string.Equals(sort, "newest", StringComparison.OrdinalIgnoreCase))
+            {
+                oldestFirst = false;
+            }
+            else if (string.Equals(sort, "oldest", StringComparison.OrdinalIgnoreCase))
+            {
+                oldestFirst = true;
+            }
+            else
+            {
+                errors["sort"] = ["Must be 'newest' or 'oldest'."];
+            }
+        }
+
+        return errors;
+    }
+
     private static Task<RecruiterProfile?> FindRecruiterProfileAsync(IApplicationDbContext db, Guid userId, CancellationToken cancellationToken) =>
         db.RecruiterProfiles.FirstOrDefaultAsync(r => r.UserId == userId, cancellationToken);
 
@@ -221,6 +305,9 @@ public static class RecruiterApplicationEndpoints
             .Join(db.Users, c => c.UserId, u => u.Id, (c, u) => new ApplicantInfo(u.FirstName, u.LastName, u.Email))
             .FirstOrDefaultAsync(cancellationToken);
 
+    // See ApplicationEndpoints.ToResponse for why Entity.UpdatedAt is an
+    // accurate stand-in for "status last changed": Status is the only field
+    // ever mutated on a JobApplication after creation.
     private static RecruiterApplicationResponse ToResponse(JobApplication application, ApplicantInfo applicant) => new(
         application.Id,
         application.JobId,
@@ -230,7 +317,8 @@ public static class RecruiterApplicationEndpoints
         application.Status.ToString(),
         application.CoverLetter,
         application.ResumeOriginalFileName,
-        application.CreatedAt);
+        application.CreatedAt,
+        application.UpdatedAt ?? application.CreatedAt);
 
     private sealed record ApplicantInfo(string FirstName, string LastName, string Email);
 }

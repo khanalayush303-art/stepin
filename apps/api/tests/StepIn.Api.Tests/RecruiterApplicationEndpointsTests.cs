@@ -131,6 +131,36 @@ public sealed class RecruiterApplicationEndpointsTests(AuthApiFactory factory) :
         return (await response.Content.ReadFromJsonAsync<ApplicationResponse>(ct))!;
     }
 
+    /// <summary>Same as <see cref="IssueApplicantWithProfileTokenAsync"/>, but also hands back the generated email for search-by-email tests.</summary>
+    private async Task<(string Token, string Email)> IssueApplicantWithProfileTokenAndEmailAsync(
+        CancellationToken ct, string firstName = "Test", string lastName = "User")
+    {
+        using var client = CreateClient();
+        var clerkUserId = $"user_{Guid.NewGuid():N}";
+        var email = $"{Guid.NewGuid()}@example.com";
+        var token = AuthApiFactory.IssueToken(clerkUserId, email, firstName, lastName);
+
+        using var setup = BuildRequest(HttpMethod.Post, "/api/v1/auth/account-setup", token, new AccountSetupRequest("Applicant"));
+        (await client.SendAsync(setup, ct)).EnsureSuccessStatusCode();
+
+        using var profile = BuildRequest(
+            HttpMethod.Put,
+            "/api/v1/profile/candidate",
+            token,
+            new UpdateCandidateProfileRequest(null, null, "Graduate", null, null, null, null, null, null, null, null, null));
+        (await client.SendAsync(profile, ct)).EnsureSuccessStatusCode();
+
+        return (token, email);
+    }
+
+    private async Task<List<RecruiterApplicationSummaryResponse>> ListAsync(HttpClient client, string recruiterToken, Guid jobId, string query, CancellationToken ct)
+    {
+        using var list = BuildRequest(HttpMethod.Get, $"/api/v1/recruiter/jobs/{jobId}/applications{query}", recruiterToken);
+        var response = await client.SendAsync(list, ct);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        return (await response.Content.ReadFromJsonAsync<List<RecruiterApplicationSummaryResponse>>(ct))!;
+    }
+
     // ---------------------------------------------------------------------------- auth ---
 
     [Fact]
@@ -216,6 +246,153 @@ public sealed class RecruiterApplicationEndpointsTests(AuthApiFactory factory) :
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         summaries.Should().BeEmpty();
+    }
+
+    // ------------------------------------------------------- filter / search / sort ---
+
+    [Fact]
+    public async Task Status_filter_returns_only_applications_with_that_exact_status()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var recruiterToken = await IssueRecruiterWithCompanyTokenAsync(ct, "Acme Pty Ltd");
+        var job = await CreateAndPublishJobAsync(client, recruiterToken, null, ct);
+
+        var submitted = await SubmitApplicationAsync(client, await IssueApplicantWithProfileTokenAsync(ct, "Alice", "A"), job.Id, ct);
+        var reviewed = await SubmitApplicationAsync(client, await IssueApplicantWithProfileTokenAsync(ct, "Bob", "B"), job.Id, ct);
+        var shortlisted = await SubmitApplicationAsync(client, await IssueApplicantWithProfileTokenAsync(ct, "Carol", "C"), job.Id, ct);
+        var rejected = await SubmitApplicationAsync(client, await IssueApplicantWithProfileTokenAsync(ct, "Dave", "D"), job.Id, ct);
+
+        async Task SetStatus(Guid applicationId, string status)
+        {
+            using var update = BuildRequest(HttpMethod.Put, $"/api/v1/recruiter/applications/{applicationId}/status", recruiterToken, new UpdateApplicationStatusRequest(status));
+            (await client.SendAsync(update, ct)).EnsureSuccessStatusCode();
+        }
+
+        await SetStatus(reviewed.Id, "Reviewed");
+        await SetStatus(shortlisted.Id, "Shortlisted");
+        await SetStatus(rejected.Id, "Rejected");
+        // `submitted` is left at its default "Submitted" status.
+
+        (await ListAsync(client, recruiterToken, job.Id, "?status=Submitted", ct)).Should().ContainSingle(a => a.Id == submitted.Id);
+        (await ListAsync(client, recruiterToken, job.Id, "?status=Reviewed", ct)).Should().ContainSingle(a => a.Id == reviewed.Id);
+        (await ListAsync(client, recruiterToken, job.Id, "?status=Shortlisted", ct)).Should().ContainSingle(a => a.Id == shortlisted.Id);
+        (await ListAsync(client, recruiterToken, job.Id, "?status=Rejected", ct)).Should().ContainSingle(a => a.Id == rejected.Id);
+    }
+
+    [Fact]
+    public async Task Search_matches_first_name_last_name_or_email_case_insensitively()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var recruiterToken = await IssueRecruiterWithCompanyTokenAsync(ct, "Acme Pty Ltd");
+        var job = await CreateAndPublishJobAsync(client, recruiterToken, null, ct);
+
+        var (johnToken, johnEmail) = await IssueApplicantWithProfileTokenAndEmailAsync(ct, "John", "Smith");
+        var (janeToken, janeEmail) = await IssueApplicantWithProfileTokenAndEmailAsync(ct, "Jane", "Doe");
+        var john = await SubmitApplicationAsync(client, johnToken, job.Id, ct);
+        var jane = await SubmitApplicationAsync(client, janeToken, job.Id, ct);
+
+        // First name, mixed case.
+        (await ListAsync(client, recruiterToken, job.Id, "?search=JOHN", ct)).Should().ContainSingle(a => a.Id == john.Id);
+
+        // Last name, lower case.
+        (await ListAsync(client, recruiterToken, job.Id, "?search=doe", ct)).Should().ContainSingle(a => a.Id == jane.Id);
+
+        // Email, upper case — proves the match isn't name-only.
+        (await ListAsync(client, recruiterToken, job.Id, $"?search={Uri.EscapeDataString(johnEmail.ToUpperInvariant())}", ct))
+            .Should().ContainSingle(a => a.Id == john.Id);
+
+        // No match at all.
+        (await ListAsync(client, recruiterToken, job.Id, "?search=nonexistent-candidate", ct)).Should().BeEmpty();
+
+        _ = janeEmail; // generated but unused beyond proving John's search above doesn't also match Jane
+    }
+
+    [Fact]
+    public async Task Sort_controls_order_and_default_matches_pre_phase_3_5_newest_first_behavior()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var recruiterToken = await IssueRecruiterWithCompanyTokenAsync(ct, "Acme Pty Ltd");
+        var job = await CreateAndPublishJobAsync(client, recruiterToken, null, ct);
+
+        var first = await SubmitApplicationAsync(client, await IssueApplicantWithProfileTokenAsync(ct, "First", "Applicant"), job.Id, ct);
+        var second = await SubmitApplicationAsync(client, await IssueApplicantWithProfileTokenAsync(ct, "Second", "Applicant"), job.Id, ct);
+
+        // No sort parameter: unchanged, pre-existing newest-first behavior.
+        var defaultOrder = await ListAsync(client, recruiterToken, job.Id, "", ct);
+        defaultOrder.Select(a => a.Id).Should().Equal(second.Id, first.Id);
+
+        // Explicit sort=newest matches the default exactly.
+        var newest = await ListAsync(client, recruiterToken, job.Id, "?sort=newest", ct);
+        newest.Select(a => a.Id).Should().Equal(second.Id, first.Id);
+
+        var oldest = await ListAsync(client, recruiterToken, job.Id, "?sort=oldest", ct);
+        oldest.Select(a => a.Id).Should().Equal(first.Id, second.Id);
+    }
+
+    [Fact]
+    public async Task Status_search_and_sort_filters_combine_correctly()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var recruiterToken = await IssueRecruiterWithCompanyTokenAsync(ct, "Acme Pty Ltd");
+        var job = await CreateAndPublishJobAsync(client, recruiterToken, null, ct);
+
+        var johnSubmitted = await SubmitApplicationAsync(client, await IssueApplicantWithProfileTokenAsync(ct, "John", "Carter"), job.Id, ct);
+        var johnShortlisted = await SubmitApplicationAsync(client, await IssueApplicantWithProfileTokenAsync(ct, "Johnny", "Walker"), job.Id, ct);
+        _ = await SubmitApplicationAsync(client, await IssueApplicantWithProfileTokenAsync(ct, "Someone", "Else"), job.Id, ct);
+
+        using var update = BuildRequest(HttpMethod.Put, $"/api/v1/recruiter/applications/{johnShortlisted.Id}/status", recruiterToken, new UpdateApplicationStatusRequest("Shortlisted"));
+        (await client.SendAsync(update, ct)).EnsureSuccessStatusCode();
+
+        // search narrows to the two "john*" applicants; status narrows further to the one actually Shortlisted.
+        var combined = await ListAsync(client, recruiterToken, job.Id, "?search=john&status=Shortlisted&sort=oldest", ct);
+        combined.Select(a => a.Id).Should().Equal(johnShortlisted.Id);
+
+        var searchOnly = await ListAsync(client, recruiterToken, job.Id, "?search=john&sort=oldest", ct);
+        searchOnly.Select(a => a.Id).Should().Equal(johnSubmitted.Id, johnShortlisted.Id);
+    }
+
+    [Fact]
+    public async Task Invalid_status_filter_value_is_rejected()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var recruiterToken = await IssueRecruiterWithCompanyTokenAsync(ct, "Acme Pty Ltd");
+        var job = await CreateAndPublishJobAsync(client, recruiterToken, null, ct);
+
+        using var list = BuildRequest(HttpMethod.Get, $"/api/v1/recruiter/jobs/{job.Id}/applications?status=NotARealStatus", recruiterToken);
+        (await client.SendAsync(list, ct)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Invalid_sort_value_is_rejected()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var recruiterToken = await IssueRecruiterWithCompanyTokenAsync(ct, "Acme Pty Ltd");
+        var job = await CreateAndPublishJobAsync(client, recruiterToken, null, ct);
+
+        using var list = BuildRequest(HttpMethod.Get, $"/api/v1/recruiter/jobs/{job.Id}/applications?sort=sideways", recruiterToken);
+        (await client.SendAsync(list, ct)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task Recruiter_A_cannot_use_filters_to_retrieve_recruiter_Bs_applications()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var recruiterA = await IssueRecruiterWithCompanyTokenAsync(ct, "Company A");
+        var recruiterB = await IssueRecruiterWithCompanyTokenAsync(ct, "Company B");
+        var jobB = await CreateAndPublishJobAsync(client, recruiterB, ValidCreateRequest("Job B"), ct);
+        await SubmitApplicationAsync(client, await IssueApplicantWithProfileTokenAsync(ct, "John", "Doe"), jobB.Id, ct);
+
+        // Same 404-not-403 guarantee as the unfiltered endpoint, with every
+        // new query parameter populated — none of them can substitute for ownership.
+        using var list = BuildRequest(HttpMethod.Get, $"/api/v1/recruiter/jobs/{jobB.Id}/applications?status=Submitted&search=john&sort=oldest", recruiterA);
+        (await client.SendAsync(list, ct)).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     // ------------------------------------------------------- cross-recruiter isolation ---

@@ -23,7 +23,8 @@ public sealed record ApplicationResponse(
     string Status,
     string? CoverLetter,
     string ResumeFileName,
-    DateTimeOffset CreatedAt);
+    DateTimeOffset CreatedAt,
+    DateTimeOffset StatusUpdatedAt);
 
 /// <summary>
 /// Whether the signed-in candidate has already applied to a given job — the

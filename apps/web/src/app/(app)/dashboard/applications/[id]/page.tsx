@@ -129,7 +129,10 @@ function ApplicationDetailsView() {
               <ApplicationStatusBadge status={application.status} />
             </div>
 
-            <p className="text-caption text-muted-foreground">Submitted {formatDate(application.createdAt)}</p>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-caption text-muted-foreground">
+              <span>Submitted {formatDate(application.createdAt)}</span>
+              <span>Status last updated {formatDate(application.statusUpdatedAt)}</span>
+            </div>
 
             {application.coverLetter ? (
               <div className="space-y-2">

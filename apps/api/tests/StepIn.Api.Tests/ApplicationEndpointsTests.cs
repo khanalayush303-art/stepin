@@ -497,6 +497,44 @@ public sealed class ApplicationEndpointsTests(AuthApiFactory factory) : IClassFi
     }
 
     [Fact]
+    public async Task StatusUpdatedAt_matches_CreatedAt_until_a_real_status_change_then_moves_forward()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var applicantToken = await IssueApplicantWithProfileTokenAsync(ct);
+        var recruiterToken = await IssueRecruiterWithCompanyTokenAsync(ct, "Acme Pty Ltd");
+        var job = await CreateAndPublishJobAsync(client, recruiterToken, null, ct);
+
+        using var submit = BuildMultipartRequest($"/api/v1/jobs/{job.Id}/applications", applicantToken, MinimalPdfBytes());
+        var application = (await (await client.SendAsync(submit, ct)).Content.ReadFromJsonAsync<ApplicationResponse>(ct))!;
+
+        // Status is the only field ever mutated on a JobApplication after
+        // creation, so before any update StatusUpdatedAt must exactly equal
+        // CreatedAt (it is Entity.UpdatedAt, which is null until first write,
+        // falling back to CreatedAt — not two independently-captured clocks).
+        application.StatusUpdatedAt.Should().Be(application.CreatedAt);
+
+        using var updateStatus = BuildRequest(
+            HttpMethod.Put, $"/api/v1/recruiter/applications/{application.Id}/status", recruiterToken, new UpdateApplicationStatusRequest("Reviewed"));
+        (await client.SendAsync(updateStatus, ct)).EnsureSuccessStatusCode();
+
+        // Candidate's own endpoint exposes the same persisted timestamp the
+        // recruiter-side write just produced — not just the write's own response.
+        using var detail = BuildRequest(HttpMethod.Get, $"/api/v1/applications/{application.Id}", applicantToken);
+        var afterUpdate = await (await client.SendAsync(detail, ct)).Content.ReadFromJsonAsync<ApplicationResponse>(ct);
+
+        afterUpdate!.StatusUpdatedAt.Should().BeAfter(application.CreatedAt);
+
+        // Not exact equality: the first CreatedAt came from an in-memory,
+        // not-yet-rounded value (EF's change tracker short-circuits the
+        // "re-fetch" in SubmitApplicationAsync to the tracked instance), while
+        // this one is read back after a real round trip through Postgres's
+        // microsecond timestamptz precision — a sub-millisecond difference is
+        // expected and not a bug.
+        afterUpdate.CreatedAt.Should().BeCloseTo(application.CreatedAt, TimeSpan.FromSeconds(1), "submission time never meaningfully changes");
+    }
+
+    [Fact]
     public async Task Candidate_cannot_invoke_the_recruiter_status_update_endpoint()
     {
         var ct = TestContext.Current.CancellationToken;

@@ -6,10 +6,10 @@ import { useParams, useSearchParams } from "next/navigation";
 import { Bell, Bookmark, Building2, Download, FileText, GraduationCap, LayoutDashboard, Search, User } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
 import { Alert } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ApplicationStatusBadge } from "@/components/applications/application-status-badge";
 import { DashboardShell, type DashboardNavItem } from "@/components/dashboard/dashboard-shell";
 import { ApiError, formError } from "@/lib/auth/client";
 import { downloadResume, getApplication } from "@/lib/applications/api";
@@ -126,9 +126,7 @@ function ApplicationDetailsView() {
                   <p className="text-body font-medium text-foreground-secondary">{application.companyName}</p>
                 </div>
               </div>
-              <Badge tone="info" variant="subtle" showDot>
-                {application.status}
-              </Badge>
+              <ApplicationStatusBadge status={application.status} />
             </div>
 
             <p className="text-caption text-muted-foreground">Submitted {formatDate(application.createdAt)}</p>

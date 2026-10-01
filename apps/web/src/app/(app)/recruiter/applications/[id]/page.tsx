@@ -15,7 +15,7 @@ import { ApiError, formError } from "@/lib/auth/client";
 import { downloadRecruiterResume, getRecruiterApplication, updateRecruiterApplicationStatus } from "@/lib/applications/api";
 import { APPLICATION_STATUSES, type ApplicationStatus, type RecruiterApplication } from "@/lib/applications/types";
 import { formatDate } from "@/lib/utils";
-import { ApplicationStatusBadge } from "../_components/application-status-badge";
+import { ApplicationStatusBadge } from "@/components/applications/application-status-badge";
 
 const NAV: DashboardNavItem[] = [
   { href: "/recruiter", label: "Overview", icon: LayoutDashboard },

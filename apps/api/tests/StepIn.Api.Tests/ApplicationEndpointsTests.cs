@@ -460,4 +460,64 @@ public sealed class ApplicationEndpointsTests(AuthApiFactory factory) : IClassFi
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
+
+    // ----------------------------------------------------------- status visibility (3.4) ---
+
+    [Theory]
+    [InlineData("Reviewed")]
+    [InlineData("Shortlisted")]
+    [InlineData("Rejected")]
+    public async Task Candidate_sees_the_real_persisted_status_after_a_recruiter_changes_it(string newStatus)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var applicantToken = await IssueApplicantWithProfileTokenAsync(ct);
+        var recruiterToken = await IssueRecruiterWithCompanyTokenAsync(ct, "Acme Pty Ltd");
+        var job = await CreateAndPublishJobAsync(client, recruiterToken, null, ct);
+
+        using var submit = BuildMultipartRequest($"/api/v1/jobs/{job.Id}/applications", applicantToken, MinimalPdfBytes());
+        var application = (await (await client.SendAsync(submit, ct)).Content.ReadFromJsonAsync<ApplicationResponse>(ct))!;
+        application.Status.Should().Be("Submitted");
+
+        // The recruiter changes status through the Phase 3.3 endpoint — the
+        // only mutation path for status anywhere in the API.
+        using var updateStatus = BuildRequest(
+            HttpMethod.Put, $"/api/v1/recruiter/applications/{application.Id}/status", recruiterToken, new UpdateApplicationStatusRequest(newStatus));
+        (await client.SendAsync(updateStatus, ct)).EnsureSuccessStatusCode();
+
+        // The candidate's own list and detail endpoints reflect the database's
+        // persisted value — not a cached or frontend-only state.
+        using var list = BuildRequest(HttpMethod.Get, "/api/v1/applications", applicantToken);
+        var summaries = await (await client.SendAsync(list, ct)).Content.ReadFromJsonAsync<List<ApplicationSummaryResponse>>(ct);
+        summaries!.Single(a => a.Id == application.Id).Status.Should().Be(newStatus);
+
+        using var detail = BuildRequest(HttpMethod.Get, $"/api/v1/applications/{application.Id}", applicantToken);
+        var detailResponse = await (await client.SendAsync(detail, ct)).Content.ReadFromJsonAsync<ApplicationResponse>(ct);
+        detailResponse!.Status.Should().Be(newStatus);
+    }
+
+    [Fact]
+    public async Task Candidate_cannot_invoke_the_recruiter_status_update_endpoint()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var applicantToken = await IssueApplicantWithProfileTokenAsync(ct);
+        var recruiterToken = await IssueRecruiterWithCompanyTokenAsync(ct, "Acme Pty Ltd");
+        var job = await CreateAndPublishJobAsync(client, recruiterToken, null, ct);
+
+        using var submit = BuildMultipartRequest($"/api/v1/jobs/{job.Id}/applications", applicantToken, MinimalPdfBytes());
+        var application = (await (await client.SendAsync(submit, ct)).Content.ReadFromJsonAsync<ApplicationResponse>(ct))!;
+
+        using var update = BuildRequest(
+            HttpMethod.Put, $"/api/v1/recruiter/applications/{application.Id}/status", applicantToken, new UpdateApplicationStatusRequest("Reviewed"));
+        var response = await client.SendAsync(update, ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        // Confirms the rejection actually prevented the write, not just that
+        // the response code was wrong.
+        using var verify = BuildRequest(HttpMethod.Get, $"/api/v1/applications/{application.Id}", applicantToken);
+        var verifyResponse = await (await client.SendAsync(verify, ct)).Content.ReadFromJsonAsync<ApplicationResponse>(ct);
+        verifyResponse!.Status.Should().Be("Submitted");
+    }
 }

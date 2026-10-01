@@ -8,6 +8,11 @@ const APPLICATION_STATUS_TONE = {
   Rejected: "error",
 } as const;
 
+/**
+ * Shared between the candidate's own application pages and the recruiter's
+ * application review pages — same real ApplicationStatus value either way,
+ * never the unrelated mock ApplicationStage type in lib/types.ts.
+ */
 export function ApplicationStatusBadge({ status }: { status: ApplicationStatus }) {
   return (
     <Badge tone={APPLICATION_STATUS_TONE[status]} variant="subtle" showDot>

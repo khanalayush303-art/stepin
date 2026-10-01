@@ -5,11 +5,11 @@ import Link from "next/link";
 import { Bell, Bookmark, FileText, GraduationCap, LayoutDashboard, Search, User } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
 import { Alert } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ApplicationStatusBadge } from "@/components/applications/application-status-badge";
 import { DashboardShell, type DashboardNavItem } from "@/components/dashboard/dashboard-shell";
 import { formError } from "@/lib/auth/client";
 import { listApplications } from "@/lib/applications/api";
@@ -101,9 +101,7 @@ export default function MyApplicationsPage() {
                       {application.companyName} &middot; applied {formatDate(application.createdAt)}
                     </p>
                   </div>
-                  <Badge tone="info" variant="subtle" showDot>
-                    {application.status}
-                  </Badge>
+                  <ApplicationStatusBadge status={application.status} />
                   <Button variant="outline" size="sm" asChild>
                     <Link href={`/dashboard/applications/${application.id}`}>View</Link>
                   </Button>

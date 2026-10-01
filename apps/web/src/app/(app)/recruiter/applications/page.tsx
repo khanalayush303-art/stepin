@@ -17,7 +17,7 @@ import type { RecruiterApplicationSummary } from "@/lib/applications/types";
 import { listJobs } from "@/lib/jobs/api";
 import type { JobSummary } from "@/lib/jobs/types";
 import { formatDate } from "@/lib/utils";
-import { ApplicationStatusBadge } from "./_components/application-status-badge";
+import { ApplicationStatusBadge } from "@/components/applications/application-status-badge";
 
 const NAV: DashboardNavItem[] = [
   { href: "/recruiter", label: "Overview", icon: LayoutDashboard },

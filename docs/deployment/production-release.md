@@ -24,6 +24,26 @@ traffic.
 - **New API + old schema:** does **not** work. Job queries select `Category`, so every job query fails.
 - **Therefore:** migrate first, then release the API. Do not release the API first.
 
+## Current state (recorded in Phase 4.4G.2)
+
+| Item | State |
+|---|---|
+| Pre-migration database snapshot | `vs_yeMoe3m3Z9ewH1NvYg33gDlj` on `pg_data` (`vol_vp2j282l2odqnnj4`), status `created`, 5-day retention. |
+| Restore from snapshot | **Not tested.** The procedure is documented, not verified. |
+| Resume volume | `stepin_resumes` (`vol_r1jw2okgxqqpp5wr`) created in `syd`, 1 GB, encrypted. **Not attached**: no machine has it until a deploy with the `[[mounts]]` block. |
+| `Storage__ResumeRootPath` | Staged with `--stage`. The stored value's digest matches the value already present, so it was `/app/data/resumes` before this phase. Runtime use is **not verified** until the app runs with the volume mounted. |
+| Production migration state | **Unknown.** Could not be read without production credentials. The check is in step 3 below. |
+| Migration rehearsal | Done on a disposable local PostgreSQL 17 (not production data). See below. |
+| Production AIDX owner | **Not created.** |
+
+**Migration rehearsal (local, disposable database, synthetic data):** the database was migrated to
+`20261001214802_AddSavedJobs`, then one Career job, its user, company and recruiter profile were
+seeded. Then `20261005021348_AddAidxFoundations` was applied. Results: `aidx` schema present with 12
+tables; `Jobs.Category` is `NOT NULL`, default `'Career'`; `Jobs.AidxProjectId` is nullable; the seeded
+Career job kept `Category = Career`, `AidxProjectId = NULL`, `Status = Published`; row counts unchanged.
+Seven migrations are recorded in `stepin.__ef_migrations_history`. This does not replace a rehearsal on a
+restored copy of production data, which is still required.
+
 ## 1. Pre-deployment checks
 
 1. Record the commit to release, and confirm the working tree is clean.
@@ -34,7 +54,7 @@ traffic.
 3. Confirm the current production schema before migrating:
    `fly proxy 15432:5432 -a stepin-api-db`, then from a second terminal list
    `dotnet ef migrations list` with the production connection supplied as an environment variable.
-   Read the `__EFMigrationsHistory` table. **Do not paste the connection string into a file or the repo.**
+   Read the migration history: `SELECT "MigrationId" FROM stepin.__ef_migrations_history ORDER BY 1;` (EF names this table in lowercase, in the `stepin` schema). **Do not paste the connection string into a file or the repo.**
 4. Confirm the run-time configuration (names only): `ConnectionStrings__Postgres`, `Clerk__Authority`,
    `Clerk__AuthorizedParties__0`, `Cors__AllowedOrigins__0`, `ASPNETCORE_ENVIRONMENT`, and
    `Storage__ResumeRootPath`.
@@ -52,7 +72,7 @@ dotnet ef database update 20261005021348_AddAidxFoundations \
 ```
 
 Verify: `dotnet ef migrations list` shows `20261005021348_AddAidxFoundations` as applied, and
-`__EFMigrationsHistory` has the row. Then check the schema has the `aidx` schema and `Jobs.Category`.
+`stepin.__ef_migrations_history` has the row. Then check the schema has the `aidx` schema and `Jobs.Category`.
 
 > **Unverified:** this command has not been run against a restored copy of production. Run it
 > against a restored snapshot first. If the environment doesn't pick up the connection override, stop

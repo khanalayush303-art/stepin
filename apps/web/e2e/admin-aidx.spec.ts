@@ -23,6 +23,9 @@ const PROTECTED_ADMIN_AIDX_ROUTES = [
   "/admin/aidx/publications",
   "/admin/aidx/publications/new",
   "/admin/aidx/publications/00000000-0000-0000-0000-000000000000/edit",
+  "/admin/aidx/news",
+  "/admin/aidx/news/new",
+  "/admin/aidx/news/00000000-0000-0000-0000-000000000000/edit",
 ];
 
 for (const path of PROTECTED_ADMIN_AIDX_ROUTES) {

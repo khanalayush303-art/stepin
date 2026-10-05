@@ -63,6 +63,8 @@ public static class AidxAdminEndpoints
         admin.MapGet("/people/{id:guid}", GetPersonAsync).WithName("GetAidxPersonAdmin");
         admin.MapGet("/publications", ListPublicationsAdminAsync).WithName("ListAidxPublicationsAdmin");
         admin.MapGet("/publications/{id:guid}", GetPublicationAdminAsync).WithName("GetAidxPublicationAdmin");
+        admin.MapGet("/news", ListNewsAdminAsync).WithName("ListAidxNewsAdmin");
+        admin.MapGet("/news/{id:guid}", GetNewsAdminAsync).WithName("GetAidxNewsAdmin");
 
         return app;
     }
@@ -399,6 +401,93 @@ public static class AidxAdminEndpoints
                 .Select(l => new AidxLinkedProjectResponse(l.ProjectId, l.Project.Title, l.Project.Slug, l.Project.Status.ToString()))
                 .OrderBy(p => p.Title)
                 .ToList()));
+    }
+
+    private static async Task<IResult> ListNewsAdminAsync(
+        string? q,
+        string? status,
+        int? page,
+        int? pageSize,
+        IApplicationDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var errors = AidxEndpointHelpers.ValidatePaging(page ?? 1, pageSize ?? AidxEndpointHelpers.DefaultPageSize);
+        if (!string.IsNullOrWhiteSpace(status) && !AidxEndpointHelpers.TryParseEnum<AidxContentStatus>(status, out _))
+        {
+            AidxEndpointHelpers.AddError(errors, "status", "Unknown status.");
+        }
+
+        if (errors.Count > 0)
+        {
+            return Results.ValidationProblem(errors);
+        }
+
+        var query = db.AidxNews.AsNoTracking().AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var term = $"%{q.Trim()}%";
+            query = query.Where(n => EF.Functions.ILike(n.Title, term) || EF.Functions.ILike(n.Summary, term));
+        }
+
+        if (AidxEndpointHelpers.TryParseEnum<AidxContentStatus>(status, out var parsedStatus))
+        {
+            query = query.Where(n => n.Status == parsedStatus);
+        }
+
+        query = query.OrderByDescending(n => n.CreatedAt).ThenBy(n => n.Id);
+
+        var (items, total) = await AidxEndpointHelpers.PageAsync(query, page ?? 1, pageSize ?? AidxEndpointHelpers.DefaultPageSize, cancellationToken);
+
+        return Results.Ok(new AidxPageResponse<AidxAdminNewsSummaryResponse>(
+            items.Select(n => new AidxAdminNewsSummaryResponse(
+                n.Id,
+                n.Slug,
+                n.Title,
+                n.Summary,
+                n.Status.ToString(),
+                n.PublishedAt,
+                n.CreatedAt,
+                n.UpdatedAt)).ToList(),
+            page ?? 1,
+            pageSize ?? AidxEndpointHelpers.DefaultPageSize,
+            total));
+    }
+
+    private static async Task<IResult> GetNewsAdminAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken)
+    {
+        var news = await db.AidxNews
+            .AsNoTracking()
+            .FirstOrDefaultAsync(n => n.Id == id, cancellationToken);
+
+        if (news is null)
+        {
+            return Results.NotFound();
+        }
+
+        // The author is a researcher record, not an account. Only the display name is returned.
+        string? authorName = null;
+        if (news.AuthorResearcherId is { } authorId)
+        {
+            authorName = await db.AidxResearchers
+                .AsNoTracking()
+                .Where(r => r.Id == authorId)
+                .Select(r => r.DisplayName)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        return Results.Ok(new AidxAdminNewsDetailResponse(
+            news.Id,
+            news.Slug,
+            news.Title,
+            news.Summary,
+            news.Body,
+            news.Status.ToString(),
+            news.PublishedAt,
+            news.CreatedAt,
+            news.UpdatedAt,
+            news.AuthorResearcherId,
+            authorName));
     }
 
     /// <summary>Researcher name when linked, otherwise the external name. Shared by list and detail.</summary>
@@ -1029,7 +1118,8 @@ public static class AidxAdminEndpoints
             return Results.ValidationProblem(errors);
         }
 
-        var slug = ResolveSlug(request.Slug, request.Title);
+        // Public News URLs are stable. A missing slug keeps the stored one, so a title change never rewrites it.
+        var slug = string.IsNullOrWhiteSpace(request.Slug) ? news.Slug : ResolveSlug(request.Slug, request.Title);
         if (await db.AidxNews.AnyAsync(n => n.Slug == slug && n.Id != id, cancellationToken))
         {
             return SlugInUse();
@@ -1240,8 +1330,30 @@ public static class AidxAdminEndpoints
     private static Task<IResult> DeletePublicationAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken) =>
         DeleteEntityAsync(db.AidxPublications, id, db, cancellationToken);
 
-    private static Task<IResult> DeleteNewsAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken) =>
-        DeleteEntityAsync(db.AidxNews, id, db, cancellationToken);
+    /// <summary>
+    /// Only drafts can be deleted. A published or archived item may already be linked from outside the site,
+    /// so removing it would break a public URL. Archive takes it down instead.
+    /// </summary>
+    private static async Task<IResult> DeleteNewsAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken)
+    {
+        var news = await db.AidxNews.FirstOrDefaultAsync(n => n.Id == id, cancellationToken);
+        if (news is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (news.Status != AidxContentStatus.Draft)
+        {
+            return Results.Problem(
+                title: "Only draft news can be deleted. Archive published news instead.",
+                statusCode: StatusCodes.Status409Conflict);
+        }
+
+        db.RemoveRange(new[] { news });
+        await db.SaveChangesAsync(cancellationToken);
+
+        return Results.NoContent();
+    }
 
     private static Task<IResult> DeleteEventAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken) =>
         DeleteEntityAsync(db.AidxEvents, id, db, cancellationToken);

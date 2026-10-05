@@ -91,6 +91,33 @@ public sealed record AidxEventResponse(
     string? RegistrationUrl,
     string? SpeakerName);
 
+// ---- Admin news reads --------------------------------------------------------
+
+/// <summary>Admin list row. Includes drafts and archived items, which the public list never returns.</summary>
+public sealed record AidxAdminNewsSummaryResponse(
+    Guid Id,
+    string Slug,
+    string Title,
+    string Summary,
+    string Status,
+    DateTimeOffset? PublishedAt,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? UpdatedAt);
+
+/// <summary>Admin edit view. The author is identified by display name only. The image key is not returned.</summary>
+public sealed record AidxAdminNewsDetailResponse(
+    Guid Id,
+    string Slug,
+    string Title,
+    string Summary,
+    string Body,
+    string Status,
+    DateTimeOffset? PublishedAt,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? UpdatedAt,
+    Guid? AuthorResearcherId,
+    string? AuthorName);
+
 // ---- Admin publication reads -------------------------------------------------
 
 /// <summary>Admin list row. Includes unpublished publications, which the public list never returns.</summary>

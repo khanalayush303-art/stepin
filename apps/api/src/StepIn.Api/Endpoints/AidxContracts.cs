@@ -91,6 +91,40 @@ public sealed record AidxEventResponse(
     string? RegistrationUrl,
     string? SpeakerName);
 
+// ---- Admin people reads ------------------------------------------------------
+
+/// <summary>Admin list row. Includes unpublished people, which the public list never returns.</summary>
+public sealed record AidxAdminPersonSummaryResponse(
+    Guid Id,
+    string Slug,
+    string DisplayName,
+    string Category,
+    string? Position,
+    bool Published);
+
+/// <summary>
+/// Admin edit view of a person. No account or email fields. The storage key stays out, since there is no
+/// media upload in this phase.
+/// </summary>
+public sealed record AidxAdminPersonDetailResponse(
+    Guid Id,
+    string Slug,
+    string DisplayName,
+    string Category,
+    string? Position,
+    string? Biography,
+    string? OrcidUrl,
+    string? GoogleScholarUrl,
+    string? LinkedInUrl,
+    string? WebsiteUrl,
+    bool Published,
+    IReadOnlyList<AidxLinkedProjectResponse> Projects,
+    IReadOnlyList<AidxLinkedPublicationResponse> Publications);
+
+public sealed record AidxLinkedProjectResponse(Guid Id, string Title, string Slug, string Status);
+
+public sealed record AidxLinkedPublicationResponse(Guid Id, string Title, int Year);
+
 // ---- Admin research area read ------------------------------------------------
 
 /// <summary>Admin view of a research area. Adds the display order that the edit form must round-trip.</summary>

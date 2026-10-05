@@ -59,6 +59,8 @@ public static class AidxAdminEndpoints
         admin.MapGet("/research/{id:guid}", GetResearchAreaAsync).WithName("GetAidxResearchAreaAdmin");
         admin.MapGet("/projects", ListProjectsAsync).WithName("ListAidxProjectsAdmin");
         admin.MapGet("/projects/{id:guid}", GetProjectAsync).WithName("GetAidxProjectAdmin");
+        admin.MapGet("/people", ListPeopleAsync).WithName("ListAidxPeopleAdmin");
+        admin.MapGet("/people/{id:guid}", GetPersonAsync).WithName("GetAidxPersonAdmin");
 
         return app;
     }
@@ -179,6 +181,107 @@ public static class AidxAdminEndpoints
                 .OrderBy(r => r.Researcher.DisplayName)
                 .Select(r => new AidxAdminProjectResearcherResponse(r.ResearcherId, r.Researcher.DisplayName, r.Role))
                 .ToList()));
+    }
+
+    private static async Task<IResult> ListPeopleAsync(
+        string? search,
+        string? category,
+        bool? published,
+        int? page,
+        int? pageSize,
+        IApplicationDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var errors = AidxEndpointHelpers.ValidatePaging(page ?? 1, pageSize ?? AidxEndpointHelpers.DefaultPageSize);
+        if (!string.IsNullOrWhiteSpace(category) && !AidxEndpointHelpers.TryParseEnum<AidxResearcherCategory>(category, out _))
+        {
+            AidxEndpointHelpers.AddError(errors, "category", "Unknown researcher category.");
+        }
+
+        if (errors.Count > 0)
+        {
+            return Results.ValidationProblem(errors);
+        }
+
+        var query = db.AidxResearchers.AsNoTracking().AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            query = query.Where(r => EF.Functions.ILike(r.DisplayName, $"%{search.Trim()}%"));
+        }
+
+        if (AidxEndpointHelpers.TryParseEnum<AidxResearcherCategory>(category, out var parsedCategory))
+        {
+            query = query.Where(r => r.Category == parsedCategory);
+        }
+
+        if (published is { } isPublished)
+        {
+            query = query.Where(r => r.Published == isPublished);
+        }
+
+        query = query.OrderBy(r => r.DisplayName).ThenBy(r => r.Id);
+
+        var (people, total) = await AidxEndpointHelpers.PageAsync(query, page ?? 1, pageSize ?? AidxEndpointHelpers.DefaultPageSize, cancellationToken);
+
+        return Results.Ok(new AidxPageResponse<AidxAdminPersonSummaryResponse>(
+            people.Select(r => new AidxAdminPersonSummaryResponse(
+                r.Id,
+                r.Slug,
+                r.DisplayName,
+                r.Category.ToString(),
+                r.Position,
+                r.Published)).ToList(),
+            page ?? 1,
+            pageSize ?? AidxEndpointHelpers.DefaultPageSize,
+            total));
+    }
+
+    /// <summary>
+    /// The admin edit view. Linked projects and authored publications are read-only here. They show an
+    /// admin what would be affected by a deletion, and publication authorship is never edited through the
+    /// people CMS.
+    /// </summary>
+    private static async Task<IResult> GetPersonAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken)
+    {
+        var person = await db.AidxResearchers
+            .AsNoTracking()
+            .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
+
+        if (person is null)
+        {
+            return Results.NotFound();
+        }
+
+        var projects = await db.AidxProjects
+            .AsNoTracking()
+            .Where(p => p.Researchers.Any(link => link.ResearcherId == id))
+            .OrderBy(p => p.Title)
+            .Select(p => new AidxLinkedProjectResponse(p.Id, p.Title, p.Slug, p.Status.ToString()))
+            .ToListAsync(cancellationToken);
+
+        var publications = await db.AidxPublications
+            .AsNoTracking()
+            .Where(p => p.Authors.Any(author => author.ResearcherId == id))
+            .OrderByDescending(p => p.Year)
+            .ThenBy(p => p.Title)
+            .Select(p => new AidxLinkedPublicationResponse(p.Id, p.Title, p.Year))
+            .ToListAsync(cancellationToken);
+
+        return Results.Ok(new AidxAdminPersonDetailResponse(
+            person.Id,
+            person.Slug,
+            person.DisplayName,
+            person.Category.ToString(),
+            person.Position,
+            person.Biography,
+            person.OrcidUrl,
+            person.GoogleScholarUrl,
+            person.LinkedInUrl,
+            person.WebsiteUrl,
+            person.Published,
+            projects,
+            publications));
     }
 
     // ---- Research areas ----------------------------------------------------
@@ -510,7 +613,8 @@ public static class AidxAdminEndpoints
             return Results.ValidationProblem(errors);
         }
 
-        var slug = ResolveSlug(request.Slug, request.DisplayName);
+        // A missing slug keeps the existing public URL. A name change never rewrites it silently.
+        var slug = string.IsNullOrWhiteSpace(request.Slug) ? researcher.Slug : ResolveSlug(request.Slug, request.DisplayName);
         if (await db.AidxResearchers.AnyAsync(r => r.Slug == slug && r.Id != id, cancellationToken))
         {
             return SlugInUse();

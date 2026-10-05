@@ -5,9 +5,6 @@ import {
   BadgeCheck,
   Building2,
   FileText,
-  LayoutDashboard,
-  ScrollText,
-  ShieldCheck,
   TrendingUp,
   Users,
 } from "lucide-react";
@@ -15,18 +12,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { DashboardShell, type DashboardNavItem } from "@/components/dashboard/dashboard-shell";
+import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { StatCard } from "@/components/dashboard/stat-card";
-
-const NAV: DashboardNavItem[] = [
-  { href: "/admin", label: "Overview", icon: LayoutDashboard },
-  { href: "/admin/users", label: "Users", icon: Users },
-  { href: "/admin/companies", label: "Companies", icon: Building2 },
-  { href: "/admin/jobs", label: "Jobs", icon: FileText },
-  { href: "/admin/verification", label: "Verification", icon: ShieldCheck, badge: "7" },
-  { href: "/admin/reports", label: "Reports", icon: TrendingUp },
-  { href: "/admin/audit", label: "Audit log", icon: ScrollText },
-];
+import { ADMIN_NAV } from "./_nav";
 
 const VERIFICATION_QUEUE = [
   { id: "v1", company: "Northbridge Analytics", submitted: "2 days ago", check: "ABN matches trading name", state: "Needs review" },
@@ -48,7 +36,7 @@ const AUDIT = [
 
 export default function AdminDashboardPage() {
   return (
-    <DashboardShell nav={NAV} navLabel="Admin dashboard">
+    <DashboardShell nav={ADMIN_NAV} navLabel="Admin dashboard">
       <div className="space-y-6">
         <div className="space-y-1">
           <h1 className="text-h2 text-foreground">Platform overview</h1>

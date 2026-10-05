@@ -91,6 +91,34 @@ public sealed record AidxEventResponse(
     string? RegistrationUrl,
     string? SpeakerName);
 
+// ---- Admin event reads -------------------------------------------------------
+
+/// <summary>Admin list row. Includes drafts and archived events, which the public list never returns.</summary>
+public sealed record AidxAdminEventSummaryResponse(
+    Guid Id,
+    string Slug,
+    string Title,
+    string Status,
+    DateTimeOffset StartsAt,
+    DateTimeOffset? EndsAt,
+    string? Location,
+    string? SpeakerName);
+
+/// <summary>Admin edit view. The image key is deliberately absent.</summary>
+public sealed record AidxAdminEventDetailResponse(
+    Guid Id,
+    string Slug,
+    string Title,
+    string Description,
+    string Status,
+    DateTimeOffset StartsAt,
+    DateTimeOffset? EndsAt,
+    string? Location,
+    string? RegistrationUrl,
+    string? SpeakerName,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? UpdatedAt);
+
 // ---- Admin news reads --------------------------------------------------------
 
 /// <summary>Admin list row. Includes drafts and archived items, which the public list never returns.</summary>

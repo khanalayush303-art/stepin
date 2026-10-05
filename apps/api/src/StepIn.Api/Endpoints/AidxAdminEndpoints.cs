@@ -65,6 +65,8 @@ public static class AidxAdminEndpoints
         admin.MapGet("/publications/{id:guid}", GetPublicationAdminAsync).WithName("GetAidxPublicationAdmin");
         admin.MapGet("/news", ListNewsAdminAsync).WithName("ListAidxNewsAdmin");
         admin.MapGet("/news/{id:guid}", GetNewsAdminAsync).WithName("GetAidxNewsAdmin");
+        admin.MapGet("/events", ListEventsAdminAsync).WithName("ListAidxEventsAdmin");
+        admin.MapGet("/events/{id:guid}", GetEventAdminAsync).WithName("GetAidxEventAdmin");
 
         return app;
     }
@@ -488,6 +490,94 @@ public static class AidxAdminEndpoints
             news.UpdatedAt,
             news.AuthorResearcherId,
             authorName));
+    }
+
+    private static async Task<IResult> ListEventsAdminAsync(
+        string? q,
+        string? status,
+        bool? upcoming,
+        int? page,
+        int? pageSize,
+        IDateTimeProvider clock,
+        IApplicationDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var errors = AidxEndpointHelpers.ValidatePaging(page ?? 1, pageSize ?? AidxEndpointHelpers.DefaultPageSize);
+        if (!string.IsNullOrWhiteSpace(status) && !AidxEndpointHelpers.TryParseEnum<AidxContentStatus>(status, out _))
+        {
+            AidxEndpointHelpers.AddError(errors, "status", "Unknown status.");
+        }
+
+        if (errors.Count > 0)
+        {
+            return Results.ValidationProblem(errors);
+        }
+
+        var query = db.AidxEvents.AsNoTracking().AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var term = $"%{q.Trim()}%";
+            query = query.Where(e => EF.Functions.ILike(e.Title, term)
+                || EF.Functions.ILike(e.Description, term)
+                || (e.Location != null && EF.Functions.ILike(e.Location, term)));
+        }
+
+        if (AidxEndpointHelpers.TryParseEnum<AidxContentStatus>(status, out var parsedStatus))
+        {
+            query = query.Where(e => e.Status == parsedStatus);
+        }
+
+        if (upcoming == true)
+        {
+            var now = clock.UtcNow;
+            query = query.Where(e => e.StartsAt >= now);
+        }
+
+        query = query.OrderBy(e => e.StartsAt).ThenBy(e => e.Id);
+
+        var (items, total) = await AidxEndpointHelpers.PageAsync(query, page ?? 1, pageSize ?? AidxEndpointHelpers.DefaultPageSize, cancellationToken);
+
+        return Results.Ok(new AidxPageResponse<AidxAdminEventSummaryResponse>(
+            items.Select(e => new AidxAdminEventSummaryResponse(
+                e.Id,
+                e.Slug,
+                e.Title,
+                e.Status.ToString(),
+                e.StartsAt,
+                e.EndsAt,
+                e.Location,
+                e.SpeakerName)).ToList(),
+            page ?? 1,
+            pageSize ?? AidxEndpointHelpers.DefaultPageSize,
+            total));
+    }
+
+    private static async Task<IResult> GetEventAdminAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken)
+    {
+        var evt = await db.AidxEvents
+            .AsNoTracking()
+            .FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
+
+        if (evt is null)
+        {
+            return Results.NotFound();
+        }
+
+        // The image key is not returned: there is no media upload in this phase.
+        return Results.Ok(new AidxAdminEventDetailResponse(
+            evt.Id,
+            evt.Slug,
+            evt.Title,
+            evt.Description,
+            evt.Status.ToString(),
+            evt.StartsAt,
+            evt.EndsAt,
+            evt.Location,
+            evt.RegistrationUrl,
+            evt.SpeakerName,
+            evt.CreatedAt,
+            evt.UpdatedAt));
     }
 
     /// <summary>Researcher name when linked, otherwise the external name. Shared by list and detail.</summary>
@@ -1241,7 +1331,8 @@ public static class AidxAdminEndpoints
             return Results.ValidationProblem(errors);
         }
 
-        var slug = ResolveSlug(request.Slug, request.Title);
+        // Public Event URLs are stable. A missing slug keeps the stored one, so a title change never rewrites it.
+        var slug = string.IsNullOrWhiteSpace(request.Slug) ? evt.Slug : ResolveSlug(request.Slug, request.Title);
         if (await db.AidxEvents.AnyAsync(e => e.Slug == slug && e.Id != id, cancellationToken))
         {
             return SlugInUse();
@@ -1355,8 +1446,30 @@ public static class AidxAdminEndpoints
         return Results.NoContent();
     }
 
-    private static Task<IResult> DeleteEventAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken) =>
-        DeleteEntityAsync(db.AidxEvents, id, db, cancellationToken);
+    /// <summary>
+    /// Only drafts can be deleted. A published or archived event may already be shared, so removing it would
+    /// break a public URL and its registration link. Archive takes it down instead.
+    /// </summary>
+    private static async Task<IResult> DeleteEventAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken)
+    {
+        var evt = await db.AidxEvents.FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
+        if (evt is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (evt.Status != AidxContentStatus.Draft)
+        {
+            return Results.Problem(
+                title: "Only draft events can be deleted. Archive published events instead.",
+                statusCode: StatusCodes.Status409Conflict);
+        }
+
+        db.RemoveRange(new[] { evt });
+        await db.SaveChangesAsync(cancellationToken);
+
+        return Results.NoContent();
+    }
 
     private static async Task<IResult> DeleteResearcherAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken)
     {

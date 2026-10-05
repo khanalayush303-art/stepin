@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { AidxErrorState, Chips } from "@/components/aidx/aidx-ui";
 import { Badge } from "@/components/ui/badge";
 import { aidxGet, AidxUnavailableError } from "@/lib/aidx/api";
-import { formatDate } from "@/lib/aidx/format";
+import { formatDate, safeHttpUrl } from "@/lib/aidx/format";
 import type { ProjectDetail } from "@/lib/aidx/types";
 
 type Props = { params: Promise<{ slug: string }> };
@@ -88,10 +88,10 @@ export default async function ProjectPage({ params }: Props) {
       <div className="container-page grid gap-12 py-12 lg:grid-cols-[2fr_1fr]">
         <article className="space-y-6">
           <Paragraphs text={project.description} />
-          {project.externalUrl ? (
+          {safeHttpUrl(project.externalUrl) ? (
             <p>
               <a
-                href={project.externalUrl}
+                href={safeHttpUrl(project.externalUrl) ?? undefined}
                 rel="noopener noreferrer"
                 target="_blank"
                 className="font-semibold text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"

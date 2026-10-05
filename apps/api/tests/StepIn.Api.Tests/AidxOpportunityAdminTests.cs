@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -540,6 +541,76 @@ public sealed class AidxOpportunityAdminTests(AuthApiFactory factory) : IClassFi
 
         using var applyClient = _factory.CreateClient();
         (await applyClient.SendAsync(form, TestContext.Current.CancellationToken)).StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
+    // ------------------------------------------------ project visibility through the job ---
+
+    [Fact]
+    public async Task A_research_job_is_hidden_from_job_detail_and_applications_while_its_project_is_not_published()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await EnsureOwnerAsync();
+        var admin = await AdminTokenAsync();
+        var projectId = await InsertProjectAsync(AidxContentStatus.Published);
+        var opportunity = await CreateOpportunityAsync(admin, ValidBody(Unique("Project linked"), projectId));
+        (await SendAsync(HttpMethod.Post, $"{Route}/{opportunity.Id}/publish", admin)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var applicant = await IssueAsync("Applicant");
+        await CompleteCandidateProfileAsync(applicant);
+
+        await SetProjectStatusAsync(projectId, AidxContentStatus.Archived);
+
+        (await SendAsync(HttpMethod.Get, $"/api/v1/jobs/{opportunity.Id}", null, null))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound, "an opportunity whose project is archived must not be served directly");
+        (await ApplyAsync(opportunity.Id, applicant)).Should().Be(HttpStatusCode.NotFound, "it must not accept applications either");
+        (await SendAsync(HttpMethod.Get, Route + "?status=Published", admin, null))
+            .StatusCode.Should().Be(HttpStatusCode.OK, "the admin list still shows the published job for editing");
+
+        await SetProjectStatusAsync(projectId, AidxContentStatus.Published);
+
+        (await SendAsync(HttpMethod.Get, $"/api/v1/jobs/{opportunity.Id}", null, null))
+            .StatusCode.Should().Be(HttpStatusCode.OK, "republishing the project makes the opportunity public again");
+    }
+
+    [Fact]
+    public async Task Public_job_detail_for_a_research_job_exposes_no_owner_or_company_identifiers()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await EnsureOwnerAsync();
+        var admin = await AdminTokenAsync();
+        var opportunity = await CreateOpportunityAsync(admin, ValidBody(Unique("Private fields")));
+        (await SendAsync(HttpMethod.Post, $"{Route}/{opportunity.Id}/publish", admin)).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var response = await SendAsync(HttpMethod.Get, $"/api/v1/jobs/{opportunity.Id}", null, null);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        var forbidden = new[] { "recruiterProfileId", "companyId", "userId", "ownerId", "email", "clerkUserId" };
+        var names = json.RootElement.EnumerateObject().Select(p => p.Name).ToList();
+        names.Intersect(forbidden, StringComparer.OrdinalIgnoreCase).Should().BeEmpty("the public job must not reveal ownership or account fields");
+    }
+
+    private async Task CompleteCandidateProfileAsync(string applicantToken)
+    {
+        using var profile = Build(HttpMethod.Put, "/api/v1/profile/candidate", applicantToken,
+            new UpdateCandidateProfileRequest(null, null, "Graduate", null, null, null, null, null, null, null, null, null));
+        using var client = _factory.CreateClient();
+        (await client.SendAsync(profile, TestContext.Current.CancellationToken)).EnsureSuccessStatusCode();
+    }
+
+    private async Task<HttpStatusCode> ApplyAsync(Guid jobId, string applicantToken)
+    {
+        using var form = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/jobs/{jobId}/applications");
+        form.Headers.Authorization = new AuthenticationHeaderValue("Bearer", applicantToken);
+        form.Headers.Add("X-Requested-With", "fetch");
+        var multipart = new MultipartFormDataContent();
+        var file = new ByteArrayContent("%PDF-1.4 minimal test resume"u8.ToArray());
+        file.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+        multipart.Add(file, "Resume", "resume.pdf");
+        form.Content = multipart;
+
+        using var client = _factory.CreateClient();
+        return (await client.SendAsync(form, TestContext.Current.CancellationToken)).StatusCode;
     }
 }
 

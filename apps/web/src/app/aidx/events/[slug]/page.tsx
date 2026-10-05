@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { AidxErrorState } from "@/components/aidx/aidx-ui";
 import { Button } from "@/components/ui/button";
 import { aidxGet, AidxUnavailableError } from "@/lib/aidx/api";
-import { formatDateTime } from "@/lib/aidx/format";
+import { formatDateTime, safeHttpUrl } from "@/lib/aidx/format";
 import type { AidxEvent } from "@/lib/aidx/types";
 
 type Props = { params: Promise<{ slug: string }> };
@@ -95,9 +95,9 @@ export default async function EventPage({ params }: Props) {
             ))}
         </div>
 
-        {evt.registrationUrl ? (
+        {safeHttpUrl(evt.registrationUrl) ? (
           <Button asChild>
-            <a href={evt.registrationUrl} rel="noopener noreferrer" target="_blank">
+            <a href={safeHttpUrl(evt.registrationUrl) ?? undefined} rel="noopener noreferrer" target="_blank">
               Register
               <span className="sr-only"> (opens in a new tab)</span>
             </a>

@@ -357,9 +357,8 @@ public static class AidxPublicEndpoints
             .AsNoTracking()
             .Include(j => j.Company)
             .Include(j => j.AidxProject)
-            .Where(j => j.Category == JobCategory.Research
-                && j.Status == JobStatus.Published
-                && (j.AidxProjectId == null || j.AidxProject!.Status == AidxContentStatus.Published));
+            .Where(j => j.Category == JobCategory.Research)
+            .Where(AidxJobVisibility.IsPubliclyVisible);
 
         if (AidxEndpointHelpers.TryParseEnum<EmploymentType>(type, out var parsedType))
         {

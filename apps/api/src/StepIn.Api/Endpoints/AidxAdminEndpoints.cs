@@ -1415,8 +1415,30 @@ public static class AidxAdminEndpoints
     private static Task<IResult> DeleteResearchAreaAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken) =>
         DeleteEntityAsync(db.AidxResearchAreas, id, db, cancellationToken);
 
-    private static Task<IResult> DeleteProjectAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken) =>
-        DeleteEntityAsync(db.AidxProjects, id, db, cancellationToken);
+    /// <summary>
+    /// Only drafts can be deleted. A published or archived project may already be linked from a public page,
+    /// and deleting it would silently unlink any published opportunity that points at it. Archive takes it down instead.
+    /// </summary>
+    private static async Task<IResult> DeleteProjectAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken)
+    {
+        var project = await db.AidxProjects.FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+        if (project is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (project.Status != AidxContentStatus.Draft)
+        {
+            return Results.Problem(
+                title: "Only draft projects can be deleted. Archive published projects instead.",
+                statusCode: StatusCodes.Status409Conflict);
+        }
+
+        db.RemoveRange(new[] { project });
+        await db.SaveChangesAsync(cancellationToken);
+
+        return Results.NoContent();
+    }
 
     private static Task<IResult> DeletePublicationAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken) =>
         DeleteEntityAsync(db.AidxPublications, id, db, cancellationToken);

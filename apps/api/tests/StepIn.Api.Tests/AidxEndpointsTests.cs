@@ -355,6 +355,37 @@ public sealed class AidxEndpointsTests(AuthApiFactory factory) : IClassFixture<A
     // -------------------------------------------------------------- cascades / FKs ---
 
     [Fact]
+    public async Task Only_draft_projects_can_be_deleted_through_the_admin_api()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var adminToken = await IssueAdminTokenAsync(ct);
+        var areaId = await CreateResearchAreaAsync(adminToken, ct);
+
+        var draft = await SendAsync(HttpMethod.Post, "/api/v1/admin/aidx/projects", adminToken, ProjectRequest(Unique("Draft Project"), [areaId]), ct);
+        var draftId = (await draft.Content.ReadFromJsonAsync<AidxIdResponse>(ct))!.Id;
+
+        var published = await SendAsync(HttpMethod.Post, "/api/v1/admin/aidx/projects", adminToken, ProjectRequest(Unique("Live Project"), [areaId]), ct);
+        var publishedId = (await published.Content.ReadFromJsonAsync<AidxIdResponse>(ct))!.Id;
+        (await SendAsync(HttpMethod.Post, $"/api/v1/admin/aidx/projects/{publishedId}/publish", adminToken, null, ct))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        (await SendAsync(HttpMethod.Delete, $"/api/v1/admin/aidx/projects/{publishedId}", adminToken, null, ct))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict, "a published project may already be linked from a public page");
+        (await SendAsync(HttpMethod.Get, $"/api/v1/admin/aidx/projects/{publishedId}", adminToken, null, ct))
+            .StatusCode.Should().Be(HttpStatusCode.OK, "the refused delete must leave the project in place");
+
+        (await SendAsync(HttpMethod.Post, $"/api/v1/admin/aidx/projects/{publishedId}/archive", adminToken, null, ct))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+        (await SendAsync(HttpMethod.Delete, $"/api/v1/admin/aidx/projects/{publishedId}", adminToken, null, ct))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict, "an archived project is not a draft either");
+
+        (await SendAsync(HttpMethod.Delete, $"/api/v1/admin/aidx/projects/{draftId}", adminToken, null, ct))
+            .StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await SendAsync(HttpMethod.Delete, $"/api/v1/admin/aidx/projects/{Guid.NewGuid()}", adminToken, null, ct))
+            .StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
     public async Task Deleting_a_project_cascades_to_its_join_rows_but_not_to_the_researcher()
     {
         var ct = TestContext.Current.CancellationToken;

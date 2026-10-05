@@ -26,6 +26,20 @@ export function formatDateTime(value: string): string {
   }).format(new Date(value));
 }
 
+/**
+ * Returns the URL only when it is http or https, otherwise null. The API already rejects other
+ * schemes, so this is a second line of defence before a stored value becomes an href.
+ */
+export function safeHttpUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 /** ISO value for a <time> element's dateTime attribute. */
 export function isoDate(value: string): string {
   return new Date(value).toISOString();

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using StepIn.Api.Infrastructure;
 using StepIn.Application.Common.Interfaces;
+using StepIn.Domain.Aidx;
 using StepIn.Domain.Applications;
 using StepIn.Domain.Jobs;
 using StepIn.Domain.Profiles;
@@ -91,10 +92,13 @@ public static class ApplicationEndpoints
             });
         }
 
-        // Published-only eligibility is enforced in the query itself: a Draft or
-        // Unpublished job is 404, indistinguishable from a job that doesn't exist.
+        // Public visibility is enforced in the query itself: a Draft or Unpublished job, or a
+        // Research job whose AIDX project is not published, is 404, indistinguishable from a
+        // job that doesn't exist.
         var job = await db.Jobs
-            .FirstOrDefaultAsync(j => j.Id == jobId && j.Status == JobStatus.Published, cancellationToken);
+            .Where(j => j.Id == jobId)
+            .Where(AidxJobVisibility.IsPubliclyVisible)
+            .FirstOrDefaultAsync(cancellationToken);
         if (job is null)
         {
             return Results.NotFound();

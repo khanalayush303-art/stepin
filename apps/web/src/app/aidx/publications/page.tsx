@@ -11,7 +11,7 @@ import {
 } from "@/components/aidx/aidx-ui";
 import { Badge } from "@/components/ui/badge";
 import { trySection, parsePage, query, type PageResult } from "@/lib/aidx/api";
-import { labels, PUBLICATION_TYPES } from "@/lib/aidx/format";
+import { labels, PUBLICATION_TYPES, safeHttpUrl } from "@/lib/aidx/format";
 import type { Publication, ResearchArea } from "@/lib/aidx/types";
 
 export const metadata: Metadata = {
@@ -95,9 +95,9 @@ export default async function PublicationsPage({ searchParams }: { searchParams:
                     </Badge>
                   </div>
                   <h2 className="text-h4 text-foreground">
-                    {pub.externalUrl ? (
+                    {safeHttpUrl(pub.externalUrl) ? (
                       <a
-                        href={pub.externalUrl}
+                        href={safeHttpUrl(pub.externalUrl) ?? undefined}
                         rel="noopener noreferrer"
                         target="_blank"
                         className="underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"

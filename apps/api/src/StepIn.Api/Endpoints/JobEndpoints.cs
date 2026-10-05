@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using StepIn.Api.Infrastructure;
 using StepIn.Application.Common.Interfaces;
+using StepIn.Domain.Aidx;
 using StepIn.Domain.Jobs;
 using StepIn.Domain.Profiles;
 
@@ -304,7 +305,8 @@ public static class JobEndpoints
     {
         var job = await db.Jobs
             .AsNoTracking()
-            .Where(j => j.Id == id && j.Status == JobStatus.Published)
+            .Where(j => j.Id == id)
+            .Where(AidxJobVisibility.IsPubliclyVisible)
             .Select(j => new PublicJobResponse(
                 j.Id,
                 j.Title,

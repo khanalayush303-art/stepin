@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
+using StepIn.Domain.Aidx;
 using StepIn.Domain.Users;
 using StepIn.Infrastructure.Persistence;
 
@@ -31,6 +32,13 @@ public sealed class ClerkUserSyncClaimsTransformation(ApplicationDbContext db) :
         var clerkUserId = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? principal.FindFirstValue("sub");
 
         if (string.IsNullOrEmpty(clerkUserId))
+        {
+            return principal;
+        }
+
+        // The AIDX system owner is an ownership record, not a person. A subject from that
+        // namespace is never synced into an app-user or role claim, so it cannot authenticate.
+        if (AidxSystemIdentity.IsSystemClerkUserId(clerkUserId))
         {
             return principal;
         }

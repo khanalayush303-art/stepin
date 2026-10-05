@@ -55,7 +55,130 @@ public static class AidxAdminEndpoints
         admin.MapDelete("/news/{id:guid}", DeleteNewsAsync).WithName("DeleteAidxNews");
         admin.MapDelete("/events/{id:guid}", DeleteEventAsync).WithName("DeleteAidxEvent");
 
+        // Admin reads include drafts and archived rows. Public reads never do.
+        admin.MapGet("/research/{id:guid}", GetResearchAreaAsync).WithName("GetAidxResearchAreaAdmin");
+        admin.MapGet("/projects", ListProjectsAsync).WithName("ListAidxProjectsAdmin");
+        admin.MapGet("/projects/{id:guid}", GetProjectAsync).WithName("GetAidxProjectAdmin");
+
         return app;
+    }
+
+    private static async Task<IResult> GetResearchAreaAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken)
+    {
+        var area = await db.AidxResearchAreas
+            .AsNoTracking()
+            .Where(a => a.Id == id)
+            .Select(a => new AidxAdminResearchAreaResponse(a.Id, a.Name, a.Slug, a.Description, a.SortOrder))
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return area is null ? Results.NotFound() : Results.Ok(area);
+    }
+
+    private static async Task<IResult> ListProjectsAsync(
+        string? status,
+        Guid? area,
+        bool? featured,
+        string? search,
+        int? page,
+        int? pageSize,
+        IApplicationDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var errors = AidxEndpointHelpers.ValidatePaging(page ?? 1, pageSize ?? AidxEndpointHelpers.DefaultPageSize);
+        if (!string.IsNullOrWhiteSpace(status) && !AidxEndpointHelpers.TryParseEnum<AidxContentStatus>(status, out _))
+        {
+            AidxEndpointHelpers.AddError(errors, "status", "Unknown status.");
+        }
+
+        if (errors.Count > 0)
+        {
+            return Results.ValidationProblem(errors);
+        }
+
+        var query = db.AidxProjects
+            .AsNoTracking()
+            .Include(p => p.ResearchAreas).ThenInclude(r => r.ResearchArea)
+            .AsQueryable();
+
+        if (AidxEndpointHelpers.TryParseEnum<AidxContentStatus>(status, out var parsedStatus))
+        {
+            query = query.Where(p => p.Status == parsedStatus);
+        }
+
+        if (area is { } areaId)
+        {
+            query = query.Where(p => p.ResearchAreas.Any(r => r.ResearchAreaId == areaId));
+        }
+
+        if (featured is { } isFeatured)
+        {
+            query = query.Where(p => p.Featured == isFeatured);
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = $"%{search.Trim()}%";
+            query = query.Where(p => EF.Functions.ILike(p.Title, term) || EF.Functions.ILike(p.Slug, term));
+        }
+
+        query = query.OrderByDescending(p => p.CreatedAt).ThenBy(p => p.Id);
+
+        var (projects, total) = await AidxEndpointHelpers.PageAsync(query, page ?? 1, pageSize ?? AidxEndpointHelpers.DefaultPageSize, cancellationToken);
+
+        return Results.Ok(new AidxPageResponse<AidxAdminProjectSummaryResponse>(
+            projects.Select(p => new AidxAdminProjectSummaryResponse(
+                p.Id,
+                p.Title,
+                p.Slug,
+                p.ShortDescription,
+                p.Status.ToString(),
+                p.Featured,
+                p.StartDate,
+                p.EndDate,
+                p.PublishedAt,
+                p.UpdatedAt,
+                p.ResearchAreas.Select(r => r.ResearchArea.Name).OrderBy(n => n).ToList())).ToList(),
+            page ?? 1,
+            pageSize ?? AidxEndpointHelpers.DefaultPageSize,
+            total));
+    }
+
+    /// <summary>
+    /// Everything the admin edit form needs, including the researcher links. Those links are not
+    /// editable yet, but the form sends them back unchanged so a save does not drop them.
+    /// </summary>
+    private static async Task<IResult> GetProjectAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken)
+    {
+        var project = await db.AidxProjects
+            .AsNoTracking()
+            .Include(p => p.ResearchAreas)
+            .Include(p => p.Technologies)
+            .Include(p => p.Researchers).ThenInclude(r => r.Researcher)
+            .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+
+        if (project is null)
+        {
+            return Results.NotFound();
+        }
+
+        return Results.Ok(new AidxAdminProjectDetailResponse(
+            project.Id,
+            project.Title,
+            project.Slug,
+            project.ShortDescription,
+            project.Description,
+            project.Status.ToString(),
+            project.Featured,
+            project.StartDate,
+            project.EndDate,
+            project.ExternalUrl,
+            project.PublishedAt,
+            project.ResearchAreas.Select(r => r.ResearchAreaId).ToList(),
+            project.Technologies.Select(t => t.Name).OrderBy(n => n).ToList(),
+            project.Researchers
+                .OrderBy(r => r.Researcher.DisplayName)
+                .Select(r => new AidxAdminProjectResearcherResponse(r.ResearcherId, r.Researcher.DisplayName, r.Role))
+                .ToList()));
     }
 
     // ---- Research areas ----------------------------------------------------

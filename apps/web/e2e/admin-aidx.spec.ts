@@ -11,6 +11,12 @@ const PROTECTED_ADMIN_AIDX_ROUTES = [
   "/admin/aidx/opportunities",
   "/admin/aidx/opportunities/new",
   "/admin/aidx/opportunities/00000000-0000-0000-0000-000000000000/edit",
+  "/admin/aidx/research",
+  "/admin/aidx/research/new",
+  "/admin/aidx/research/00000000-0000-0000-0000-000000000000/edit",
+  "/admin/aidx/projects",
+  "/admin/aidx/projects/new",
+  "/admin/aidx/projects/00000000-0000-0000-0000-000000000000/edit",
 ];
 
 for (const path of PROTECTED_ADMIN_AIDX_ROUTES) {

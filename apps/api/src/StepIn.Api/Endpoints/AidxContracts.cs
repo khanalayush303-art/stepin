@@ -91,6 +91,44 @@ public sealed record AidxEventResponse(
     string? RegistrationUrl,
     string? SpeakerName);
 
+// ---- Admin research area read ------------------------------------------------
+
+/// <summary>Admin view of a research area. Adds the display order that the edit form must round-trip.</summary>
+public sealed record AidxAdminResearchAreaResponse(Guid Id, string Name, string Slug, string? Description, int SortOrder);
+
+// ---- Admin project reads ----------------------------------------------------
+
+public sealed record AidxAdminProjectSummaryResponse(
+    Guid Id,
+    string Title,
+    string Slug,
+    string ShortDescription,
+    string Status,
+    bool Featured,
+    DateOnly? StartDate,
+    DateOnly? EndDate,
+    DateTimeOffset? PublishedAt,
+    DateTimeOffset? UpdatedAt,
+    IReadOnlyList<string> ResearchAreas);
+
+public sealed record AidxAdminProjectDetailResponse(
+    Guid Id,
+    string Title,
+    string Slug,
+    string ShortDescription,
+    string Description,
+    string Status,
+    bool Featured,
+    DateOnly? StartDate,
+    DateOnly? EndDate,
+    string? ExternalUrl,
+    DateTimeOffset? PublishedAt,
+    IReadOnlyList<Guid> ResearchAreaIds,
+    IReadOnlyList<string> Technologies,
+    IReadOnlyList<AidxAdminProjectResearcherResponse> Researchers);
+
+public sealed record AidxAdminProjectResearcherResponse(Guid ResearcherId, string DisplayName, string? Role);
+
 // ---- Admin requests and responses ------------------------------------------
 
 public sealed record AidxIdResponse(Guid Id, string? Slug, string? Status);

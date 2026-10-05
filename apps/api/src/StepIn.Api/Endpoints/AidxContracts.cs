@@ -91,6 +91,47 @@ public sealed record AidxEventResponse(
     string? RegistrationUrl,
     string? SpeakerName);
 
+// ---- Admin publication reads -------------------------------------------------
+
+/// <summary>Admin list row. Includes unpublished publications, which the public list never returns.</summary>
+public sealed record AidxAdminPublicationSummaryResponse(
+    Guid Id,
+    string Title,
+    string PublicationType,
+    int Year,
+    string? Venue,
+    string? Doi,
+    bool Published,
+    IReadOnlyList<string> Authors);
+
+/// <summary>
+/// One ordered author. Exactly one of ResearcherId or ExternalAuthorName is set. ResearcherPublished is null
+/// for external authors.
+/// </summary>
+public sealed record AidxAdminPublicationAuthorResponse(
+    int Position,
+    Guid? ResearcherId,
+    string? ExternalAuthorName,
+    string DisplayName,
+    bool? ResearcherPublished);
+
+/// <summary>
+/// Admin edit view of a publication. No PDF storage key is returned: there is no upload in this phase.
+/// </summary>
+public sealed record AidxAdminPublicationDetailResponse(
+    Guid Id,
+    string Title,
+    string? Abstract,
+    string PublicationType,
+    string? Venue,
+    int Year,
+    string? Doi,
+    string? ExternalUrl,
+    bool Published,
+    IReadOnlyList<AidxAdminPublicationAuthorResponse> Authors,
+    IReadOnlyList<Guid> ResearchAreaIds,
+    IReadOnlyList<AidxLinkedProjectResponse> Projects);
+
 // ---- Admin people reads ------------------------------------------------------
 
 /// <summary>Admin list row. Includes unpublished people, which the public list never returns.</summary>

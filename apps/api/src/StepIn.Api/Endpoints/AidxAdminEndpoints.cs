@@ -61,6 +61,8 @@ public static class AidxAdminEndpoints
         admin.MapGet("/projects/{id:guid}", GetProjectAsync).WithName("GetAidxProjectAdmin");
         admin.MapGet("/people", ListPeopleAsync).WithName("ListAidxPeopleAdmin");
         admin.MapGet("/people/{id:guid}", GetPersonAsync).WithName("GetAidxPersonAdmin");
+        admin.MapGet("/publications", ListPublicationsAdminAsync).WithName("ListAidxPublicationsAdmin");
+        admin.MapGet("/publications/{id:guid}", GetPublicationAdminAsync).WithName("GetAidxPublicationAdmin");
 
         return app;
     }
@@ -283,6 +285,125 @@ public static class AidxAdminEndpoints
             projects,
             publications));
     }
+
+    private static async Task<IResult> ListPublicationsAdminAsync(
+        string? q,
+        string? type,
+        int? year,
+        bool? published,
+        int? page,
+        int? pageSize,
+        IApplicationDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var errors = AidxEndpointHelpers.ValidatePaging(page ?? 1, pageSize ?? AidxEndpointHelpers.DefaultPageSize);
+        if (!string.IsNullOrWhiteSpace(type) && !AidxEndpointHelpers.TryParseEnum<AidxPublicationType>(type, out _))
+        {
+            AidxEndpointHelpers.AddError(errors, "type", "Unknown publication type.");
+        }
+
+        if (year is { } filterYear && (filterYear < 1900 || filterYear > 2100))
+        {
+            AidxEndpointHelpers.AddError(errors, "year", "Year must be between 1900 and 2100.");
+        }
+
+        if (errors.Count > 0)
+        {
+            return Results.ValidationProblem(errors);
+        }
+
+        var query = db.AidxPublications
+            .AsNoTracking()
+            .Include(p => p.Authors).ThenInclude(a => a.Researcher)
+            .AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var term = $"%{q.Trim()}%";
+            query = query.Where(p => EF.Functions.ILike(p.Title, term) || (p.Abstract != null && EF.Functions.ILike(p.Abstract, term)));
+        }
+
+        if (AidxEndpointHelpers.TryParseEnum<AidxPublicationType>(type, out var parsedType))
+        {
+            query = query.Where(p => p.PublicationType == parsedType);
+        }
+
+        if (year is { } yearFilter)
+        {
+            query = query.Where(p => p.Year == yearFilter);
+        }
+
+        if (published is { } isPublished)
+        {
+            query = query.Where(p => p.Published == isPublished);
+        }
+
+        query = query.OrderByDescending(p => p.Year).ThenBy(p => p.Title).ThenBy(p => p.Id);
+
+        var (publications, total) = await AidxEndpointHelpers.PageAsync(query, page ?? 1, pageSize ?? AidxEndpointHelpers.DefaultPageSize, cancellationToken);
+
+        return Results.Ok(new AidxPageResponse<AidxAdminPublicationSummaryResponse>(
+            publications.Select(p => new AidxAdminPublicationSummaryResponse(
+                p.Id,
+                p.Title,
+                p.PublicationType.ToString(),
+                p.Year,
+                p.Venue,
+                p.Doi,
+                p.Published,
+                p.Authors.OrderBy(a => a.Position).Select(AuthorDisplayName).ToList())).ToList(),
+            page ?? 1,
+            pageSize ?? AidxEndpointHelpers.DefaultPageSize,
+            total));
+    }
+
+    /// <summary>
+    /// The admin edit view. Authors keep their order, and their researcher's public flag is included so the
+    /// form can say when an author is currently hidden. Hidden authors stay linked, as the public list does.
+    /// </summary>
+    private static async Task<IResult> GetPublicationAdminAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken)
+    {
+        var publication = await db.AidxPublications
+            .AsNoTracking()
+            .Include(p => p.Authors).ThenInclude(a => a.Researcher)
+            .Include(p => p.ResearchAreas)
+            .Include(p => p.Projects).ThenInclude(l => l.Project)
+            .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+
+        if (publication is null)
+        {
+            return Results.NotFound();
+        }
+
+        return Results.Ok(new AidxAdminPublicationDetailResponse(
+            publication.Id,
+            publication.Title,
+            publication.Abstract,
+            publication.PublicationType.ToString(),
+            publication.Venue,
+            publication.Year,
+            publication.Doi,
+            publication.ExternalUrl,
+            publication.Published,
+            publication.Authors
+                .OrderBy(a => a.Position)
+                .Select(a => new AidxAdminPublicationAuthorResponse(
+                    a.Position,
+                    a.ResearcherId,
+                    a.ExternalAuthorName,
+                    AuthorDisplayName(a),
+                    a.Researcher?.Published))
+                .ToList(),
+            publication.ResearchAreas.Select(r => r.ResearchAreaId).ToList(),
+            publication.Projects
+                .Select(l => new AidxLinkedProjectResponse(l.ProjectId, l.Project.Title, l.Project.Slug, l.Project.Status.ToString()))
+                .OrderBy(p => p.Title)
+                .ToList()));
+    }
+
+    /// <summary>Researcher name when linked, otherwise the external name. Shared by list and detail.</summary>
+    private static string AuthorDisplayName(AidxPublicationAuthor author) =>
+        author.Researcher is not null ? author.Researcher.DisplayName : author.ExternalAuthorName ?? string.Empty;
 
     // ---- Research areas ----------------------------------------------------
 
@@ -712,8 +833,20 @@ public static class AidxAdminEndpoints
         publication.ExternalUrl = AidxEndpointHelpers.Clean(request.ExternalUrl);
         publication.Published = request.Published;
 
-        SyncAuthors(publication, request.Authors ?? [], db);
-        SyncPublicationLinks(publication, request, db);
+        // An omitted collection means "unchanged", not "empty". A title-only edit must never remove
+        // authors, areas or projects, so each missing list is rebuilt from the rows already stored.
+        var effective = request with
+        {
+            Authors = request.Authors ?? publication.Authors
+                .OrderBy(a => a.Position)
+                .Select(a => new AidxAuthorInput(a.ResearcherId, a.ExternalAuthorName))
+                .ToList(),
+            ResearchAreaIds = request.ResearchAreaIds ?? publication.ResearchAreas.Select(r => r.ResearchAreaId).ToList(),
+            ProjectIds = request.ProjectIds ?? publication.Projects.Select(p => p.ProjectId).ToList(),
+        };
+
+        SyncAuthors(publication, effective.Authors ?? [], db);
+        SyncPublicationLinks(publication, effective, db);
         await db.SaveChangesAsync(cancellationToken);
 
         return Results.Ok(new AidxIdResponse(publication.Id, null, null));
@@ -767,7 +900,13 @@ public static class AidxAdminEndpoints
             }
         }
 
-        var researcherIds = authors.Where(a => a.ResearcherId is not null).Select(a => a.ResearcherId!.Value).Distinct().ToList();
+        var linkedIds = authors.Where(a => a.ResearcherId is not null).Select(a => a.ResearcherId!.Value).ToList();
+        if (linkedIds.Count != linkedIds.Distinct().Count())
+        {
+            AidxEndpointHelpers.AddError(errors, "authors", "The same researcher cannot be listed as an author twice.");
+        }
+
+        var researcherIds = linkedIds.Distinct().ToList();
         if (researcherIds.Count > 0 && await db.AidxResearchers.CountAsync(r => researcherIds.Contains(r.Id), cancellationToken) != researcherIds.Count)
         {
             AidxEndpointHelpers.AddError(errors, "authors", "One or more authors reference a researcher that does not exist.");

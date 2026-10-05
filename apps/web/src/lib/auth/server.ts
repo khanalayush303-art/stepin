@@ -2,7 +2,7 @@ import "server-only";
 import { auth } from "@clerk/nextjs/server";
 import type { AuthUser } from "./types";
 
-function apiOrigin(): string {
+export function apiOrigin(): string {
   // `||`, not `??` — an env var set to "" (as opposed to genuinely unset) is
   // still falsy here, so it doesn't win over the next fallback the way it
   // would with `??`. Deployed environments (e.g. Vercel) can very easily end

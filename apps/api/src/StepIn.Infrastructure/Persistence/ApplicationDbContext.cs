@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using StepIn.Application.Common.Interfaces;
+using StepIn.Domain.Aidx;
 using StepIn.Domain.Applications;
 using StepIn.Domain.Common;
 using StepIn.Domain.Companies;
@@ -38,7 +39,45 @@ public sealed class ApplicationDbContext(
 
     public DbSet<SavedJob> SavedJobs => Set<SavedJob>();
 
+    public DbSet<AidxResearchArea> AidxResearchAreas => Set<AidxResearchArea>();
+
+    public DbSet<AidxProject> AidxProjects => Set<AidxProject>();
+
+    public DbSet<AidxProjectResearchArea> AidxProjectResearchAreas => Set<AidxProjectResearchArea>();
+
+    public DbSet<AidxProjectTechnology> AidxProjectTechnologies => Set<AidxProjectTechnology>();
+
+    public DbSet<AidxResearcher> AidxResearchers => Set<AidxResearcher>();
+
+    public DbSet<AidxProjectResearcher> AidxProjectResearchers => Set<AidxProjectResearcher>();
+
+    public DbSet<AidxPublication> AidxPublications => Set<AidxPublication>();
+
+    public DbSet<AidxPublicationAuthor> AidxPublicationAuthors => Set<AidxPublicationAuthor>();
+
+    public DbSet<AidxPublicationResearchArea> AidxPublicationResearchAreas => Set<AidxPublicationResearchArea>();
+
+    public DbSet<AidxPublicationProject> AidxPublicationProjects => Set<AidxPublicationProject>();
+
+    public DbSet<AidxNews> AidxNews => Set<AidxNews>();
+
+    public DbSet<AidxEvent> AidxEvents => Set<AidxEvent>();
+
     IQueryable<ApplicationUser> IApplicationDbContext.Users => Users;
+
+    IQueryable<AidxResearchArea> IApplicationDbContext.AidxResearchAreas => AidxResearchAreas;
+
+    IQueryable<AidxProject> IApplicationDbContext.AidxProjects => AidxProjects;
+
+    IQueryable<AidxResearcher> IApplicationDbContext.AidxResearchers => AidxResearchers;
+
+    IQueryable<AidxPublication> IApplicationDbContext.AidxPublications => AidxPublications;
+
+    IQueryable<AidxPublicationAuthor> IApplicationDbContext.AidxPublicationAuthors => AidxPublicationAuthors;
+
+    IQueryable<AidxNews> IApplicationDbContext.AidxNews => AidxNews;
+
+    IQueryable<AidxEvent> IApplicationDbContext.AidxEvents => AidxEvents;
 
     IQueryable<CandidateProfile> IApplicationDbContext.CandidateProfiles => CandidateProfiles;
 

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using StepIn.Domain.Companies;
 using StepIn.Domain.Jobs;
+using StepIn.Domain.Aidx;
 using StepIn.Domain.Profiles;
 
 namespace StepIn.Infrastructure.Persistence.Configurations;
@@ -20,8 +21,17 @@ public sealed class JobConfiguration : IEntityTypeConfiguration<Job>
         builder.Property(j => j.Compensation).HasMaxLength(100);
         builder.Property(j => j.Skills).HasColumnType("text[]");
         builder.Property(j => j.Status).HasConversion<string>().HasMaxLength(20);
+        builder.Property(j => j.Category).HasConversion<string>().HasMaxLength(20).HasDefaultValue(JobCategory.Career);
 
         builder.HasIndex(j => j.RecruiterProfileId);
+        builder.HasIndex(j => new { j.Category, j.Status, j.PublishedAt });
+
+        // Optional link for AIDX research opportunities. SetNull so deleting an AIDX
+        // project never deletes the job or any applicant history attached to it.
+        builder.HasOne(j => j.AidxProject)
+            .WithMany()
+            .HasForeignKey(j => j.AidxProjectId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         // Foreign-key-only, same reasoning as CandidateProfileConfiguration: no
         // navigation back from RecruiterProfile, so a job's owner is resolved by

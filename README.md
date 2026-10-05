@@ -14,20 +14,46 @@ professional development.
 
 ## Phase status
 
-This repository is at **Phase 1 — Authentication**.
+Backend business features are built through Phase 3 (applicant profiles, recruiter
+profiles and companies, jobs, applications, resume upload, saved jobs). The AIDX Lab
+backend foundation is in place (Phase 4.2). Frontend pages for the business features
+and for AIDX are not built yet.
 
-| Delivered | Deliberately not here yet |
+| Delivered | Not built yet |
 | --- | --- |
-| Design system (Figma + code tokens), reusable component library | Profile / job / application CRUD |
-| Public page shells, three dashboards | Resume uploads, matching, messaging, interviews |
-| Backend skeleton: DI, config, EF Core, PostgreSQL, OpenAPI, CORS, problem details, structured logging, health probes | Any business entity or endpoint beyond the user record auth needs |
-| **Real authentication via [Clerk](#authentication-clerk)** — sign-up/sign-in/Google/email verification/password reset, server-verified sessions, an application-level `Users` table keyed to the Clerk identity, and role-gated dashboards | Admin moderation logic, notifications |
-| Docker Compose for web + api + database | — |
-| Frontend e2e + accessibility tests, backend xUnit wiring + auth tests | — |
+| **Real authentication via [Clerk](#authentication-clerk)**, an application-level `Users` table keyed to the Clerk identity, and role gating (`RequireApplicant` / `RequireRecruiter` / `RequireAdmin`) | Matching, messaging, interviews, notifications |
+| Applicant and recruiter profiles, companies, jobs (draft → publish → unpublish), applications with a status workflow, resume upload, saved jobs | Frontend pages wired to the real business endpoints (dashboards still render placeholder data) |
+| AIDX Lab backend: `aidx` schema, public read endpoints, admin CRUD with publish/archive (see [AIDX Lab backend](#aidx-lab-backend)) | AIDX frontend pages, AIDX media uploads, an admin route for research opportunities |
+| Docker Compose for web + api + database; backend xUnit suite on a real PostgreSQL container | — |
 
-Every dashboard's *content* still renders from `apps/web/src/lib/placeholder-data.ts` —
-only who's allowed to see it is real. That file is isolated on purpose and is
-deleted, not migrated, when the underlying entities land.
+Dashboard *content* still renders from `apps/web/src/lib/placeholder-data.ts`. Only
+who's allowed to see it is real. That file is isolated on purpose and is deleted, not
+migrated, once the frontend is wired to the endpoints.
+
+### AIDX Lab backend
+
+AIDX research content lives in the `aidx` PostgreSQL schema, separate from the career
+tables. Its endpoints are under `/api/v1/aidx` (public) and `/api/v1/admin/aidx`
+(admin only).
+
+- **Public routes are read-only and published-only.** Draft and archived rows are never
+  returned. Lists are paged with `page` (default 1) and `pageSize` (default 20, max 50).
+- **Publishing:** projects, news and events move Draft/Archived → Published, and only a
+  published item can be archived. Publishing twice or archiving a draft returns 409.
+  Researchers and publications use a `published` flag instead.
+- **Research opportunities** reuse the existing `Job` entity, distinguished by
+  `Job.Category` (`Career` by default, `Research` for AIDX-owned rows). Public career
+  listings and detail lookups exclude `Research` jobs. No client-facing endpoint can set
+  `Category`.
+- Public routes: `research`, `projects`, `people`, `publications`, `news`, `events`, and
+  `opportunities` (research jobs only), with `/{slug}` detail routes where the content has a
+  slug. Admin routes mirror them under `/api/v1/admin/aidx`, with POST, PUT, DELETE, and
+  publish/archive where the content has a lifecycle.
+- Paged responses include `items`, `page`, `pageSize`, `totalCount`, and `totalPages`.
+- Researcher records are not user accounts. They can be linked to a StepIn account
+  later through the nullable `UserId`, but no endpoint does that yet.
+- Storage keys (`ImageKey`, `ProfileImageKey`, `PdfKey`) exist in the schema for future
+  media work and are not exposed or writable through the API.
 
 ---
 
@@ -410,14 +436,12 @@ commit.
 
 ---
 
-## What Phase 2 picks up
+## What comes next
 
-The applicant profile (education, experience, projects, skills,
-certifications), jobs, applications, and the business logic behind the
-dashboards that currently render placeholder data. Authorization for all of it
-builds on the role already established in this phase — `RequireApplicant` /
-`RequireRecruiter` / `RequireAdmin` policies exist and are tested, just not yet
-consumed by any endpoint.
+Wiring the frontend dashboards and pages to the existing business endpoints, then the
+AIDX Lab frontend. The AIDX data model and admin tools are ready for that work. An
+admin route for managing research opportunities (`Job` rows with `Category = Research`)
+is not built yet.
 
-The design system, component library, page shells, pipeline and container setup
-should not need to change to accommodate any of it.
+The design system, component library, page shells, pipeline and container setup should
+not need to change to accommodate any of it.

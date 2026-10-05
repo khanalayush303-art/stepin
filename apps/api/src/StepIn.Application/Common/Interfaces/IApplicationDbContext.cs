@@ -1,3 +1,4 @@
+using StepIn.Domain.Aidx;
 using StepIn.Domain.Applications;
 using StepIn.Domain.Companies;
 using StepIn.Domain.Jobs;
@@ -33,6 +34,20 @@ public interface IApplicationDbContext
     IQueryable<JobApplication> JobApplications { get; }
 
     IQueryable<SavedJob> SavedJobs { get; }
+
+    IQueryable<AidxResearchArea> AidxResearchAreas { get; }
+
+    IQueryable<AidxProject> AidxProjects { get; }
+
+    IQueryable<AidxResearcher> AidxResearchers { get; }
+
+    IQueryable<AidxPublication> AidxPublications { get; }
+
+    IQueryable<AidxPublicationAuthor> AidxPublicationAuthors { get; }
+
+    IQueryable<AidxNews> AidxNews { get; }
+
+    IQueryable<AidxEvent> AidxEvents { get; }
 
     /// <summary>Tracks a new entity for insertion on the next <see cref="SaveChangesAsync"/>.</summary>
     void Add<TEntity>(TEntity entity)

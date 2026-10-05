@@ -13,6 +13,7 @@ const NAV = [
   { href: "/internships", label: "Internships" },
   { href: "/companies", label: "Companies" },
   { href: "/how-it-works", label: "How it works" },
+  { href: "/aidx", label: "AIDX Lab" },
 ];
 
 export function SiteHeader() {

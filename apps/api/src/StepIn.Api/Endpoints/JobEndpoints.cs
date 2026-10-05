@@ -255,7 +255,8 @@ public static class JobEndpoints
             return Results.ValidationProblem(errors);
         }
 
-        var query = db.Jobs.AsNoTracking().Where(j => j.Status == JobStatus.Published);
+        // Research opportunities (JobCategory.Research) are AIDX content, not career postings.
+        var query = db.Jobs.AsNoTracking().Where(j => j.Status == JobStatus.Published && j.Category == JobCategory.Career);
 
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -293,6 +294,12 @@ public static class JobEndpoints
         return Results.Ok(summaries);
     }
 
+    /// <summary>
+    /// Serves any published job, Career or Research, so AIDX opportunities can link straight
+    /// into the existing job detail and apply flow. Visibility is decided by publication status
+    /// alone. Discovery (<see cref="ListPublicJobsAsync"/>) stays Career-only, so Research jobs
+    /// never appear in the career list.
+    /// </summary>
     private static async Task<IResult> GetPublicJobAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken)
     {
         var job = await db.Jobs
@@ -313,6 +320,7 @@ public static class JobEndpoints
                 j.Company.LogoUrl,
                 j.Company.Industry,
                 j.Company.Location,
+                j.Category.ToString(),
                 j.PublishedAt!.Value))
             .FirstOrDefaultAsync(cancellationToken);
 

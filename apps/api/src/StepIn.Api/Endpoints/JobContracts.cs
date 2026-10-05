@@ -83,4 +83,5 @@ public sealed record PublicJobResponse(
     string? CompanyLogoUrl,
     string? CompanyIndustry,
     string? CompanyLocation,
+    string Category,
     DateTimeOffset PublishedAt);

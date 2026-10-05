@@ -1,3 +1,4 @@
+using StepIn.Domain.Aidx;
 using StepIn.Domain.Common;
 using StepIn.Domain.Companies;
 
@@ -37,4 +38,16 @@ public sealed class Job : Entity
     public JobStatus Status { get; set; } = JobStatus.Draft;
 
     public DateTimeOffset? PublishedAt { get; set; }
+
+    /// <summary>
+    /// Career for every existing and client-created posting. Only AIDX-owned research
+    /// opportunities are <see cref="JobCategory.Research"/>. Public career listings exclude them,
+    /// and no client-facing create or update endpoint may set this value.
+    /// </summary>
+    public JobCategory Category { get; set; } = JobCategory.Career;
+
+    /// <summary>Set only for research opportunities that belong to an AIDX project.</summary>
+    public Guid? AidxProjectId { get; set; }
+
+    public AidxProject? AidxProject { get; set; }
 }

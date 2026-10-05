@@ -69,6 +69,47 @@ only so that Research Jobs have an owner.
 | Idempotent initialisation and read-only lookup | `StepIn.Infrastructure/Aidx/AidxSystemOwnershipService.cs` |
 | Sign-in guard for the reserved subject | `StepIn.Api/Infrastructure/ClerkUserSyncClaimsTransformation.cs` |
 | Tests | `StepIn.Api.Tests/AidxSystemOwnershipTests.cs` |
+| Admin opportunity API | `StepIn.Api/Endpoints/AidxOpportunityAdminEndpoints.cs`, `AidxOpportunityAdminContracts.cs` |
+| Opportunity API tests | `StepIn.Api.Tests/AidxOpportunityAdminTests.cs` |
+
+## Admin opportunity API (`/api/v1/admin/aidx/opportunities`)
+
+This route manages AIDX-owned Research Jobs only. It is not a general Job administration API.
+
+- **Boundary:** every operation applies `AidxOwnershipRules.OwnedByAidx`. That predicate requires
+  `Category == Research`, the system recruiter profile, and the AIDX Lab company. A Career job, another
+  recruiter's Research job, or a job at another company returns 404, the same as an unknown ID.
+- **Authorization:** `RequireAdmin` on every endpoint. Anonymous gets 401. Applicant and Recruiter get 403.
+- **Ownership is server-side.** The request DTO has no owner, company, category, or status field, and
+  unknown JSON properties are ignored. Create always starts as a draft.
+- **Owner unavailable:** if the system owner is missing or inconsistent, every route returns 503 with a
+  generic message. Nothing is created. Initialisation is a separate, deliberate step.
+
+### Lifecycle
+
+```text
+POST    → Draft
+Publish → Published        (from Draft or Unpublished; project must be Published if linked)
+Unpublish → Unpublished    (from Published only; project link is kept)
+DELETE  → removed          (Draft only)
+```
+
+Lifecycle rule violations return a validation problem, the same convention as the recruiter endpoints.
+
+### Project linking
+
+- No project: publish allowed.
+- Published project: publish allowed.
+- Draft or archived project: publish rejected.
+- A published opportunity cannot be relinked to a non-published project.
+- Publishing or unpublishing never changes the project's status.
+- If a linked project is later unpublished, the opportunity stays `Published` internally and is hidden
+  from public listings by the existing visibility rule.
+
+### Application
+
+No AIDX application endpoint exists. Candidates apply through the existing
+`POST /api/v1/jobs/{jobId}/applications`, which accepts any published job, including AIDX research jobs.
 
 ## Initialisation
 

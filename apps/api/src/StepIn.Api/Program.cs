@@ -90,6 +90,7 @@ app.MapRecruiterApplicationEndpoints();
 app.MapSavedJobEndpoints();
 app.MapAidxPublicEndpoints();
 app.MapAidxAdminEndpoints();
+app.MapAidxOpportunityAdminEndpoints();
 
 app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
 

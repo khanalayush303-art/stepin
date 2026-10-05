@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using StepIn.Application.Common.Interfaces;
+using StepIn.Infrastructure.Aidx;
 using StepIn.Infrastructure.Persistence;
 using StepIn.Infrastructure.Services;
 using StepIn.Infrastructure.Storage;
@@ -48,6 +49,9 @@ public static class DependencyInjection
         });
 
         services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<ApplicationDbContext>());
+
+        // Resolves the AIDX system owner. Read-only for requests: it never creates records.
+        services.AddScoped<AidxSystemOwnershipService>();
 
         services.AddHealthChecks()
             .AddDbContextCheck<ApplicationDbContext>(

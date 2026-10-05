@@ -394,7 +394,7 @@ public static class JobEndpoints
         job.UpdatedAt,
         job.PublishedAt);
 
-    private static string[] NormalizeSkills(IReadOnlyList<string>? skills) =>
+    internal static string[] NormalizeSkills(IReadOnlyList<string>? skills) =>
         (skills ?? [])
             .Select(s => s.Trim())
             .Where(s => s.Length > 0)
@@ -403,7 +403,7 @@ public static class JobEndpoints
 
     private static string? Trim(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-    private static Dictionary<string, string[]> ValidateJob(
+    internal static Dictionary<string, string[]> ValidateJob(
         string? title, string? description, string? employmentType, string? workplaceType, string? location, string? compensation)
     {
         var errors = new Dictionary<string, string[]>();

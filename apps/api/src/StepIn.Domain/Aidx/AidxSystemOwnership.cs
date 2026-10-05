@@ -20,8 +20,21 @@ public static class AidxOwnershipRules
         ArgumentNullException.ThrowIfNull(job);
         ArgumentNullException.ThrowIfNull(ownership);
 
-        return job.Category == JobCategory.Research
-            && job.RecruiterProfileId == ownership.RecruiterProfileId
-            && job.CompanyId == ownership.CompanyId;
+        return OwnedByAidx(ownership).Compile()(job);
+    }
+
+    /// <summary>
+    /// The same rule as an EF-translatable predicate, so queries and single-item checks cannot drift apart.
+    /// </summary>
+    public static System.Linq.Expressions.Expression<Func<Job, bool>> OwnedByAidx(AidxSystemOwnership ownership)
+    {
+        ArgumentNullException.ThrowIfNull(ownership);
+
+        var recruiterProfileId = ownership.RecruiterProfileId;
+        var companyId = ownership.CompanyId;
+
+        return job => job.Category == JobCategory.Research
+            && job.RecruiterProfileId == recruiterProfileId
+            && job.CompanyId == companyId;
     }
 }

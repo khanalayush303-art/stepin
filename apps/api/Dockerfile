@@ -23,6 +23,12 @@ RUN dotnet publish src/StepIn.Api/StepIn.Api.csproj \
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
+# Git commit this image was built from. Pass it at build time:
+#   fly deploy --build-arg GIT_SHA=$(git rev-parse HEAD)
+# so the deployed image can be matched to source. Defaults to "unknown" for builds that omit it.
+ARG GIT_SHA=unknown
+LABEL org.opencontainers.image.revision=$GIT_SHA
+
 # COPY below always writes root:root regardless of the active USER, so this
 # directory needs its ownership fixed up while still root, before the switch.
 RUN mkdir -p /app/data/resumes && chown -R app:app /app/data

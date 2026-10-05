@@ -123,8 +123,14 @@ records and creates nothing.
   different company, or a renamed company. The service does not repair these, because silent repair could
   mis-attribute opportunities.
 - **It is not run automatically.** Nothing calls it at startup, so production data is never written as a
-  side effect of deploying. Running it against production is a separate, deliberate step that needs owner
-  approval.
+  side effect of deploying.
+- **The operator command is the only entry point:** `dotnet StepIn.Api.dll aidx-init-owner`
+  (`apps/api/src/StepIn.Api/Operations/AidxOwnerInitCommand.cs`). It is not an HTTP route. It checks with the
+  read-only `FindAsync` first, so a consistent owner is reported with no write. It exits 2 with
+  "No changes were made" for inconsistent state. It never starts the web host or applies migrations. The
+  production procedure is in [docs/deployment/production-release.md](../deployment/production-release.md).
+- **Validation runs before any write** for an existing user. A user holding a role is refused before a
+  company or profile is created.
 
 ## Rules for future AIDX endpoints (Phase 4.4C)
 

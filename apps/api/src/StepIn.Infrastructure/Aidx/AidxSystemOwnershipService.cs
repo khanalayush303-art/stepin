@@ -48,6 +48,13 @@ public sealed class AidxSystemOwnershipService(ApplicationDbContext db)
     {
         var user = await db.Users.SingleOrDefaultAsync(u => u.ClerkUserId == AidxSystemIdentity.ClerkUserId, cancellationToken);
 
+        // An existing user is checked before anything is written. Otherwise a user holding a role
+        // but with no profile would get a company and profile created before the refusal.
+        if (user is not null)
+        {
+            ValidateUser(user);
+        }
+
         if (user is null)
         {
             user = new ApplicationUser
@@ -79,7 +86,7 @@ public sealed class AidxSystemOwnershipService(ApplicationDbContext db)
             ?? throw new InvalidOperationException("AIDX system owner could not be resolved after initialisation.");
     }
 
-    private async Task<AidxSystemOwnership> ValidateAsync(ApplicationUser user, RecruiterProfile profile, CancellationToken cancellationToken)
+    private static void ValidateUser(ApplicationUser user)
     {
         if (user.Role is not null)
         {
@@ -90,6 +97,11 @@ public sealed class AidxSystemOwnershipService(ApplicationDbContext db)
         {
             throw new InvalidOperationException("AIDX system identity must remain suspended so it can never be used as an active account.");
         }
+    }
+
+    private async Task<AidxSystemOwnership> ValidateAsync(ApplicationUser user, RecruiterProfile profile, CancellationToken cancellationToken)
+    {
+        ValidateUser(user);
 
         if (profile.CompanyId is not { } companyId)
         {

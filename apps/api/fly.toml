@@ -24,3 +24,12 @@ primary_region = 'syd'
   size = 'shared-cpu-1x'
   memory = '512mb'
   processes = ['app']
+
+# Durable resume storage. Without this mount, resume files live on the machine's root filesystem and
+# are lost on redeploy. Before deploying this change:
+#   1. fly volumes create stepin_resumes --region syd --size 1 -a stepin-api
+#   2. fly secrets set Storage__ResumeRootPath=/app/data/resumes -a stepin-api
+# The volume must exist first, or the deploy fails. Keep one machine: a volume attaches to one machine only.
+[[mounts]]
+  source = 'stepin_resumes'
+  destination = '/app/data'

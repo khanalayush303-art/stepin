@@ -216,10 +216,15 @@ dotnet run --project src/StepIn.Api    # http://localhost:5080
 
 ### Database migrations
 
-One migration exists (`InitialCreate`): a single `stepin."Users"` table —
-`Id`, `ClerkUserId` (unique), `Email` (unique), `FirstName`, `LastName`, `Role`
-(nullable until account setup), `AccountStatus`, `CreatedAt`, `UpdatedAt`. To add
-another migration once a later phase adds entities:
+Migrations, in order:
+
+- `InitialCreate`: the `stepin."Users"` table (`ClerkUserId` unique, `Email` unique, `Role` nullable until account setup).
+- `20261005021348_AddAidxFoundations`: additive. Creates the `aidx` schema and the AIDX tables, and adds
+  `stepin."Jobs"."AidxProjectId"` (nullable) and `stepin."Jobs"."Category"` (default `Career`, so existing
+  jobs stay Career). Its `Down()` is never used in production. See
+  [docs/deployment/production-release.md](docs/deployment/production-release.md) for the production procedure.
+
+To add another migration once a later phase adds entities:
 
 ```bash
 cd apps/api

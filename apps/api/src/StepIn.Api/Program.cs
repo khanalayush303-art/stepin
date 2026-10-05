@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Serilog;
 using StepIn.Api.Endpoints;
 using StepIn.Api.Infrastructure;
+using StepIn.Api.Operations;
 using StepIn.Application;
 using StepIn.Infrastructure;
 using StepIn.Infrastructure.Persistence;
@@ -103,6 +104,16 @@ if (app.Environment.IsEnvironment("Testing"))
     app.MapGet("/api/v1/test/admin-only", () => Results.Ok()).RequireAuthorization("RequireAdmin").ExcludeFromDescription();
 }
 
+// ------------------------------------------------------- operator commands ---
+// One-off commands run instead of the web host. They never start Kestrel and never apply
+// migrations, so a command cannot happen as a side effect of booting the API.
+if (args.Contains(AidxOwnerInitCommand.Name, StringComparer.OrdinalIgnoreCase))
+{
+    var exitCode = await AidxOwnerInitCommand.RunAsync(app.Services, Console.Out, CancellationToken.None);
+    await Log.CloseAndFlushAsync();
+    return exitCode;
+}
+
 // --------------------------------------------------------------- startup ---
 try
 {
@@ -119,6 +130,8 @@ finally
 {
     await Log.CloseAndFlushAsync();
 }
+
+return 0;
 
 // Applies pending migrations on boot in Development only.
 //

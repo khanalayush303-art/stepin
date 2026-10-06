@@ -200,6 +200,82 @@ public sealed class JobDetailIntegrationTests(AuthApiFactory factory) : IClassFi
         (await GetDetailAsync(research, ct)).Should().Be(HttpStatusCode.NotFound);
     }
 
+    /// <summary>Creates an AIDX project directly in the database with the given status.</summary>
+    private async Task<(Guid Id, string Slug, string Title)> InsertProjectAsync(StepIn.Domain.Aidx.AidxContentStatus status, CancellationToken ct)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var title = Unique("Linked project");
+        var project = new StepIn.Domain.Aidx.AidxProject
+        {
+            Title = title,
+            Slug = title.Replace(' ', '-').ToLowerInvariant(),
+            ShortDescription = "Short.",
+            Description = "Long.",
+            Status = status,
+            PublishedAt = status == StepIn.Domain.Aidx.AidxContentStatus.Published ? DateTimeOffset.UtcNow : null,
+        };
+        db.Add(project);
+        await db.SaveChangesAsync(ct);
+        return (project.Id, project.Slug, title);
+    }
+
+    private async Task LinkProjectAsync(Guid jobId, Guid projectId, CancellationToken ct)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        await db.Jobs.Where(j => j.Id == jobId)
+            .ExecuteUpdateAsync(s => s.SetProperty(j => j.AidxProjectId, projectId), ct);
+    }
+
+    [Fact]
+    public async Task Research_job_linked_to_a_published_project_reports_that_project()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var recruiter = await IssueRecruiterWithCompanyAsync(ct);
+        var jobId = await CreateDraftJobAsync(recruiter, ct);
+        await SetCategoryAsync(jobId, JobCategory.Research, ct);
+        var (projectId, slug, title) = await InsertProjectAsync(StepIn.Domain.Aidx.AidxContentStatus.Published, ct);
+        await LinkProjectAsync(jobId, projectId, ct);
+        await PublishAsync(recruiter, jobId, ct);
+
+        using var client = CreateClient();
+        var body = await client.GetFromJsonAsync<PublicJobResponse>($"/api/v1/jobs/{jobId}", ct);
+
+        body!.AidxProjectSlug.Should().Be(slug);
+        body.AidxProjectTitle.Should().Be(title);
+    }
+
+    [Fact]
+    public async Task Career_job_reports_no_aidx_project()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var recruiter = await IssueRecruiterWithCompanyAsync(ct);
+        var jobId = await CreateDraftJobAsync(recruiter, ct);
+        await PublishAsync(recruiter, jobId, ct);
+
+        using var client = CreateClient();
+        var body = await client.GetFromJsonAsync<PublicJobResponse>($"/api/v1/jobs/{jobId}", ct);
+
+        body!.AidxProjectSlug.Should().BeNull();
+        body.AidxProjectTitle.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Research_job_linked_to_a_draft_project_is_not_found_even_when_published()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var recruiter = await IssueRecruiterWithCompanyAsync(ct);
+        var jobId = await CreateDraftJobAsync(recruiter, ct);
+        await SetCategoryAsync(jobId, JobCategory.Research, ct);
+        await PublishAsync(recruiter, jobId, ct);
+        var (projectId, _, _) = await InsertProjectAsync(StepIn.Domain.Aidx.AidxContentStatus.Draft, ct);
+        await LinkProjectAsync(jobId, projectId, ct);
+
+        (await GetDetailAsync(jobId, ct)).Should().Be(HttpStatusCode.NotFound,
+            "a draft AIDX project must hide its opportunities from the public job detail");
+    }
+
     [Fact]
     public async Task Unknown_job_id_returns_404()
     {

@@ -221,6 +221,24 @@ public sealed record AidxLinkedProjectResponse(Guid Id, string Title, string Slu
 
 public sealed record AidxLinkedPublicationResponse(Guid Id, string Title, int Year);
 
+/// <summary>Public detail for one published publication. Adds the related areas and published projects.</summary>
+public sealed record AidxPublicationDetailResponse(
+    Guid Id,
+    string Title,
+    string? Abstract,
+    string PublicationType,
+    string? Venue,
+    int Year,
+    string? Doi,
+    string? ExternalUrl,
+    IReadOnlyList<string> Authors,
+    IReadOnlyList<AidxPublicationResearchAreaLinkResponse> ResearchAreas,
+    IReadOnlyList<AidxPublicationProjectLinkResponse> Projects);
+
+public sealed record AidxPublicationResearchAreaLinkResponse(Guid Id, string Name, string Slug);
+
+public sealed record AidxPublicationProjectLinkResponse(Guid Id, string Title, string Slug);
+
 // ---- Admin research area read ------------------------------------------------
 
 /// <summary>Admin view of a research area. Adds the display order that the edit form must round-trip.</summary>

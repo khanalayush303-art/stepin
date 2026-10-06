@@ -26,6 +26,7 @@ public static class AidxPublicEndpoints
         aidx.MapGet("/people", ListPeopleAsync).WithName("ListAidxPeople").WithSummary("Published researcher profiles.");
         aidx.MapGet("/people/{slug}", GetPersonAsync).WithName("GetAidxPerson").WithSummary("One published researcher profile.");
         aidx.MapGet("/publications", ListPublicationsAsync).WithName("ListAidxPublications").WithSummary("Published publications.");
+        aidx.MapGet("/publications/{id:guid}", GetPublicationAsync).WithName("GetAidxPublication").WithSummary("One published publication, with its research areas and published projects.");
         aidx.MapGet("/news", ListNewsAsync).WithName("ListAidxNews").WithSummary("Published news.");
         aidx.MapGet("/news/{slug}", GetNewsAsync).WithName("GetAidxNews").WithSummary("One published news item.");
         aidx.MapGet("/events", ListEventsAsync).WithName("ListAidxEvents").WithSummary("Published events.");
@@ -256,6 +257,19 @@ public static class AidxPublicEndpoints
             publications.Select(ToPublicationResponse).ToList(), page ?? 1, pageSize ?? AidxEndpointHelpers.DefaultPageSize, total));
     }
 
+    private static async Task<IResult> GetPublicationAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken)
+    {
+        // Unpublished and unknown publications are both 404, so a draft's existence is not revealed.
+        var publication = await db.AidxPublications
+            .AsNoTracking()
+            .Include(p => p.Authors).ThenInclude(a => a.Researcher)
+            .Include(p => p.ResearchAreas).ThenInclude(r => r.ResearchArea)
+            .Include(p => p.Projects).ThenInclude(p => p.Project)
+            .FirstOrDefaultAsync(p => p.Id == id && p.Published, cancellationToken);
+
+        return publication is null ? Results.NotFound() : Results.Ok(ToPublicationDetailResponse(publication));
+    }
+
     private static async Task<IResult> ListNewsAsync(int? page, int? pageSize, IApplicationDbContext db, CancellationToken cancellationToken)
     {
         var errors = AidxEndpointHelpers.ValidatePaging(page ?? 1, pageSize ?? AidxEndpointHelpers.DefaultPageSize);
@@ -413,6 +427,33 @@ public static class AidxPublicEndpoints
         publication.Authors
             .OrderBy(a => a.Position)
             .Select(a => a.Researcher is not null ? a.Researcher.DisplayName : a.ExternalAuthorName ?? string.Empty)
+            .ToList());
+
+    /// <summary>
+    /// Detail view of one publication. Projects are included only when they are published, so an
+    /// unpublished project is never revealed through a publication.
+    /// </summary>
+    private static AidxPublicationDetailResponse ToPublicationDetailResponse(AidxPublication publication) => new(
+        publication.Id,
+        publication.Title,
+        publication.Abstract,
+        publication.PublicationType.ToString(),
+        publication.Venue,
+        publication.Year,
+        publication.Doi,
+        publication.ExternalUrl,
+        publication.Authors
+            .OrderBy(a => a.Position)
+            .Select(a => a.Researcher is not null ? a.Researcher.DisplayName : a.ExternalAuthorName ?? string.Empty)
+            .ToList(),
+        publication.ResearchAreas
+            .Select(r => new AidxPublicationResearchAreaLinkResponse(r.ResearchArea.Id, r.ResearchArea.Name, r.ResearchArea.Slug))
+            .OrderBy(r => r.Name)
+            .ToList(),
+        publication.Projects
+            .Where(p => p.Project.Status == AidxContentStatus.Published)
+            .Select(p => new AidxPublicationProjectLinkResponse(p.Project.Id, p.Project.Title, p.Project.Slug))
+            .OrderBy(p => p.Title)
             .ToList());
 
     private static AidxOpportunityResponse ToOpportunity(StepIn.Domain.Jobs.Job job) => new(

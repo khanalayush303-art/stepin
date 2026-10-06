@@ -27,9 +27,9 @@ const EMPLOYMENT_TYPES = ["FullTime", "PartTime", "Contract", "Internship", "Cas
 type Params = { type?: string; page?: string };
 
 /**
- * Research opportunities are StepIn jobs with the Research category. Each card links to the
- * existing StepIn job detail (/dashboard/discover/{id}), which is where candidates apply. AIDX
- * has no application flow of its own.
+ * Research opportunities are StepIn jobs with the Research category. Each card opens the AIDX
+ * opportunity page, which reads the same StepIn job and links to the existing StepIn application
+ * flow. AIDX has no application flow of its own.
  */
 export default async function OpportunitiesPage({ searchParams }: { searchParams: Promise<Params> }) {
   const params = await searchParams;
@@ -76,7 +76,7 @@ export default async function OpportunitiesPage({ searchParams }: { searchParams
               {opportunities.data.items.map((job) => (
                 <li key={job.id}>
                   <LinkCard
-                    href={`/dashboard/discover/${job.id}`}
+                    href={`/aidx/opportunities/${job.id}`}
                     title={job.title}
                     description={`${job.companyName} · ${job.location}`}
                     icon={AIDX_ICONS.opportunities}

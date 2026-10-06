@@ -323,6 +323,8 @@ public static class JobEndpoints
                 j.Company.Industry,
                 j.Company.Location,
                 j.Category.ToString(),
+                j.AidxProject != null ? j.AidxProject.Slug : null,
+                j.AidxProject != null ? j.AidxProject.Title : null,
                 j.PublishedAt!.Value))
             .FirstOrDefaultAsync(cancellationToken);
 

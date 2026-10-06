@@ -84,4 +84,6 @@ public sealed record PublicJobResponse(
     string? CompanyIndustry,
     string? CompanyLocation,
     string Category,
+    string? AidxProjectSlug,
+    string? AidxProjectTitle,
     DateTimeOffset PublishedAt);

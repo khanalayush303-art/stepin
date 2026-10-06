@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { SiteFooter } from "@/components/layout/site-footer";
 import { Logo } from "@/components/layout/logo";
+import { AidxNavLinks } from "@/components/aidx/aidx-nav-links";
 
 export const metadata: Metadata = {
   title: {
@@ -55,18 +56,7 @@ export default function AidxLayout({ children }: { children: React.ReactNode }) 
           </div>
 
           <nav aria-label="AIDX Lab">
-            <ul className="flex flex-wrap gap-x-5 gap-y-2">
-              {NAV.map((item) => (
-                <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    className="rounded-sm text-small font-medium text-foreground-secondary underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-                  >
-                    {item.label}
-                  </Link>
-                </li>
-              ))}
-            </ul>
+            <AidxNavLinks items={NAV} />
           </nav>
         </div>
       </header>

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { PageHeader } from "@/components/layout/page-header";
 import {
   AidxEmptyState,
@@ -110,6 +111,15 @@ export default async function PublicationsPage({ searchParams }: { searchParams:
                     )}
                   </h2>
                   {pub.authors.length ? <p className="text-small text-foreground-secondary">{pub.authors.join(", ")}</p> : null}
+                  <p>
+                    <Link
+                      href={`/aidx/publications/${pub.id}`}
+                      className="text-small font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                    >
+                      View details
+                      <span className="sr-only"> about {pub.title}</span>
+                    </Link>
+                  </p>
                   {pub.venue ? <p className="text-small text-muted-foreground">{pub.venue}</p> : null}
                   {pub.doi ? (
                     <p className="text-caption text-muted-foreground">

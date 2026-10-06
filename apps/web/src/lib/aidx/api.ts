@@ -31,6 +31,27 @@ export async function aidxGet<T>(path: string): Promise<T | null> {
   return (await response.json()) as T;
 }
 
+/**
+ * Public, anonymous GET against a StepIn (non-AIDX) API route, for example a research
+ * opportunity's job detail. Same rules as aidxGet: a 404 resolves to null, other failures throw.
+ */
+export async function stepInPublicGet<T>(path: string): Promise<T | null> {
+  let response: Response;
+  try {
+    response = await fetch(`${apiOrigin()}/api/v1${path}`, { next: { revalidate: 60 } });
+  } catch {
+    throw new AidxUnavailableError();
+  }
+
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    throw new AidxUnavailableError();
+  }
+  return (await response.json()) as T;
+}
+
 /** Builds a query string from a record, dropping empty values so URLs stay clean. */
 export function query(params: Record<string, string | number | boolean | undefined | null>): string {
   const search = new URLSearchParams();

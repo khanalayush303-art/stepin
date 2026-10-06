@@ -88,6 +88,24 @@ export interface Publication {
   authors: string[];
 }
 
+export interface PublicationResearchArea {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+export interface PublicationProject {
+  id: string;
+  title: string;
+  slug: string;
+}
+
+/** One published publication, with its related research areas and published projects. */
+export interface PublicationDetail extends Publication {
+  researchAreas: PublicationResearchArea[];
+  projects: PublicationProject[];
+}
+
 export interface NewsSummary {
   id: string;
   slug: string;
@@ -117,7 +135,10 @@ export interface AidxEvent {
   speakerName: string | null;
 }
 
-/** A research opportunity. Links to the StepIn job detail, never to an AIDX-specific page. */
+/**
+ * A research opportunity in list form. Opportunity pages link to the AIDX opportunity detail,
+ * which reads the StepIn job, so the StepIn job remains the single source of truth.
+ */
 export interface Opportunity {
   id: string;
   title: string;
@@ -130,4 +151,22 @@ export interface Opportunity {
   publishedAt: string | null;
   projectSlug: string | null;
   projectTitle: string | null;
+}
+
+/** The public StepIn job detail (GET /api/v1/jobs/{id}), used for a research opportunity page. */
+export interface PublicJob {
+  id: string;
+  title: string;
+  description: string;
+  employmentType: string;
+  workplaceType: string;
+  location: string;
+  compensation: string | null;
+  skills: string[];
+  companyName: string;
+  companyDescription: string | null;
+  category: "Career" | "Research";
+  aidxProjectSlug: string | null;
+  aidxProjectTitle: string | null;
+  publishedAt: string;
 }

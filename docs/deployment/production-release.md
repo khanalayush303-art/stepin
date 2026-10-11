@@ -124,6 +124,12 @@ smoke tests.
 
 ## Resume storage
 
+Resume files are written through `IResumeStorage`, selected by `Storage__Provider` (`Local`, the
+default, or `Supabase`). Both options keep resumes off the container's own disk-durability story —
+read the one that applies to the current deployment.
+
+### Option A — local disk + Fly volume (not currently attached)
+
 Resume files are written to `Storage__ResumeRootPath` (local disk, see `LocalDiskResumeStorage`). The
 image has no persistent storage, so resumes are lost on redeploy unless a volume is mounted.
 
@@ -143,6 +149,67 @@ Verify after the deploy:
   mounted over `/app/data` may come up owned by root. If writes fail with a permission error, the
   volume needs ownership fixed for user `app` before release. Do not run the container as root to work
   around it.
+
+As of this writing `stepin_resumes` exists but is **unattached** — the backend runs on `Storage__Provider`
+unset (defaulting to `Local`'s unmounted path), so resumes currently do not survive a redeploy either way.
+
+### Option B — Supabase Storage (`SupabaseResumeStorage`)
+
+Persists resumes in a private Supabase Storage bucket over its plain HTTP object API, so they survive
+every redeploy, container replacement, and restart. No Fly volume is involved; `stepin_resumes` is left
+untouched either way.
+
+**Prerequisites, done once, outside this repo:**
+
+1. Create a Supabase project (any region is fine; same-region as `syd` reduces latency but isn't required).
+2. Create a **private** bucket (e.g. `resumes`). Do not make it public.
+3. Copy the project URL and the **service-role** key (not the anon/public key) from the project's API
+   settings. The service-role key bypasses Row Level Security — treat it exactly like a database password.
+
+**Activate, as a Fly secrets deploy:**
+
+```bash
+fly secrets set \
+  Storage__Provider=Supabase \
+  Storage__Supabase__Url=https://<project-ref>.supabase.co \
+  Storage__Supabase__ServiceKey=<service-role key> \
+  Storage__Supabase__Bucket=resumes \
+  -a stepin-api
+```
+
+The app validates these three Supabase keys **at startup**: if `Storage__Provider=Supabase` and any of
+`Url`/`ServiceKey`/`Bucket` is missing, the app fails to start with a named `InvalidOperationException`
+rather than failing a candidate's first upload. Deploy after setting the secrets, then verify `/health/live`
+comes back healthy (a failed start shows as the deploy never reaching a healthy machine).
+
+**Verify after the deploy:**
+
+- Upload a resume as a test candidate, then download it through the existing API. Bytes must match.
+- Confirm the Supabase dashboard's bucket shows the new object, under a server-generated
+  `{32-hex-chars}.{ext}` key — never the candidate's real filename.
+- Redeploy the API (even with no code change) and confirm the same resume still downloads — this is
+  the actual reliability property this option exists for.
+
+**Cost/limits:** check the current Supabase plan's storage and bandwidth limits against the 5 MB-per-resume
+cap before relying on this at scale; pricing has changed over time and isn't fixed here.
+
+### Rollback between the two options
+
+- **Supabase → Local:** `fly secrets set Storage__Provider=Local -a stepin-api` (or unset it) and deploy.
+  Any resume uploaded while Supabase was active stays in Supabase — switching the provider does not move
+  files. A candidate who uploaded under Supabase cannot be served from local disk after this switch; their
+  `ResumeStorageKey` only resolves against whichever provider wrote it. Decide the data story before
+  switching a production deployment that has real resumes.
+- **Local → Supabase:** the reverse of the above — existing local-disk resumes are not migrated
+  automatically. There is no file to migrate today (production has zero `JobApplications` rows as of the
+  last read-only check), so this is currently a clean switch either direction.
+- **Supabase outage:** uploads/downloads fail with a safe, logged 500 (via `GlobalExceptionHandler`) —
+  not a silent data loss. No automatic fallback to local disk exists; this is a deliberate choice, since a
+  silent fallback would mean some resumes land on ephemeral disk without anyone noticing.
+- **Orphaned objects:** a failed `DeleteAsync` (e.g. during the duplicate-application cleanup path) is
+  logged as a warning, not thrown, so it never masks the original error — but it means an orphaned object
+  can exist in the bucket. Reconcile periodically by comparing bucket contents against
+  `stepin."JobApplications"."ResumeStorageKey"` if this ever needs auditing.
 
 ## Rollback
 

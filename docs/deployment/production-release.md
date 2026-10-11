@@ -155,6 +155,13 @@ unset (defaulting to `Local`'s unmounted path), so resumes currently do not surv
 
 ### Option B — Supabase Storage (`SupabaseResumeStorage`)
 
+**Status as of this writing: NOT ACTIVATED.** No Supabase project exists for this app yet (verified: no
+Supabase CLI, MCP connector, or `SUPABASE_*` environment variable present in this environment; no
+`Storage__Supabase__*` Fly secret set on `stepin-api`). The code is implemented and fully covered by
+offline tests (310/310 backend tests passing), but has never been exercised against a real Supabase
+project. Creating that project, and approving activation, are the two remaining steps — see the Git
+history for the implementation commit (`feat(storage): add optional Supabase-backed resume storage`).
+
 Persists resumes in a private Supabase Storage bucket over its plain HTTP object API, so they survive
 every redeploy, container replacement, and restart. No Fly volume is involved; `stepin_resumes` is left
 untouched either way.

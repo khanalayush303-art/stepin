@@ -83,6 +83,28 @@ export interface PublicJob {
   publishedAt: string;
 }
 
+/**
+ * Transparent Job Match (GET /api/v1/jobs/matches). "Unscored" means the job recorded no
+ * skills to compare against — not a poor match, just not scoreable from the data available.
+ * skillCoverage is null exactly when matchQuality is "Unscored".
+ */
+export type JobMatchQuality = "Unscored" | "ExploreMatch" | "PartialMatch" | "StrongMatch";
+
+export interface JobMatch {
+  id: string;
+  title: string;
+  companyName: string;
+  employmentType: EmploymentType;
+  workplaceType: WorkplaceType;
+  location: string;
+  compensation: string | null;
+  publishedAt: string;
+  matchedSkills: string[];
+  skillsNotYetDemonstrated: string[];
+  skillCoverage: number | null;
+  matchQuality: JobMatchQuality;
+}
+
 export interface JobFilters {
   search?: string;
   employmentType?: EmploymentType;

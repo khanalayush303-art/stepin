@@ -1,8 +1,13 @@
 import { apiClient } from "@/lib/auth/client";
-import type { Job, JobFilters, JobInput, JobSummary, PublicJob, PublicJobSummary } from "./types";
+import type { Job, JobFilters, JobInput, JobMatch, JobSummary, PublicJob, PublicJobSummary } from "./types";
 
 const BASE = "/api/v1/recruiter/jobs";
 const PUBLIC_BASE = "/api/v1/jobs";
+
+/** Transparent Job Match: ranked, explainable — see the JobMatch type for what each field means. */
+export function listJobMatches(token: string | null) {
+  return apiClient.get<JobMatch[]>(`${PUBLIC_BASE}/matches`, token);
+}
 
 export function listJobs(token: string | null) {
   return apiClient.get<JobSummary[]>(BASE, token);

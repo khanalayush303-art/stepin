@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   MapPin,
   Search,
+  Target,
   User,
 } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
@@ -33,6 +34,7 @@ import { formatDate } from "@/lib/utils";
 const NAV: DashboardNavItem[] = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/dashboard/discover", label: "Discover roles", icon: Search },
+  { href: "/dashboard/matches", label: "Job matches", icon: Target },
   { href: "/dashboard/applications", label: "Applications", icon: FileText, badge: "12" },
   { href: "/dashboard/saved", label: "Saved roles", icon: Bookmark, badge: "8" },
   { href: "/dashboard/interviews", label: "Interviews", icon: User, badge: "2" },

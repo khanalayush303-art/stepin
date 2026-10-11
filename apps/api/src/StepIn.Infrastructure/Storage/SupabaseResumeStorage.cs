@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using StepIn.Application.Common.Interfaces;
@@ -71,7 +72,7 @@ public sealed class SupabaseResumeStorage(HttpClient httpClient, ILogger<Supabas
 
         using var response = await SendAsync(HttpMethod.Get, storageKey, content: null, cancellationToken);
 
-        if (response.StatusCode == HttpStatusCode.NotFound)
+        if (response.StatusCode == HttpStatusCode.NotFound || await IsObjectNotFoundAsync(response, cancellationToken))
         {
             return null;
         }
@@ -104,7 +105,7 @@ public sealed class SupabaseResumeStorage(HttpClient httpClient, ILogger<Supabas
         {
             using var response = await SendAsync(HttpMethod.Delete, storageKey, content: null, cancellationToken);
 
-            if (!response.IsSuccessStatusCode && response.StatusCode != HttpStatusCode.NotFound)
+            if (!response.IsSuccessStatusCode && response.StatusCode != HttpStatusCode.NotFound && !await IsObjectNotFoundAsync(response, cancellationToken))
             {
                 // This is called only to clean up the losing side of a create-time race (see
                 // ApplicationEndpoints) or an equivalent cleanup path. Never throw from here: a
@@ -116,6 +117,34 @@ public sealed class SupabaseResumeStorage(HttpClient httpClient, ILogger<Supabas
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogWarning(ex, "Supabase resume deletion threw while cleaning up an object; it may be orphaned.");
+        }
+    }
+
+    /// <summary>
+    /// Supabase Storage's object GET and DELETE endpoints report a missing object as HTTP 400
+    /// with a body shaped like <c>{"statusCode":"404","error":"not_found","code":"NoSuchKey"}</c> —
+    /// not a literal HTTP 404 status. Discovered during live verification against a real project
+    /// (an offline mock, built from the documented shape rather than the real response, missed
+    /// this). Only this specific, small, structured body is inspected; any other 4xx/5xx — including
+    /// a 400 for a different reason — is still treated as a genuine failure.
+    /// </summary>
+    private static async Task<bool> IsObjectNotFoundAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        if (response.StatusCode != HttpStatusCode.BadRequest)
+        {
+            return false;
+        }
+
+        try
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            using var json = JsonDocument.Parse(body);
+            return json.RootElement.TryGetProperty("error", out var error)
+                && string.Equals(error.GetString(), "not_found", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (JsonException)
+        {
+            return false;
         }
     }
 

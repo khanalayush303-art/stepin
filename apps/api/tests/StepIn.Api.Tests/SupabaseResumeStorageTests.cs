@@ -147,6 +147,42 @@ public sealed class SupabaseResumeStorageTests
     }
 
     [Fact]
+    public async Task OpenReadAsync_returns_null_for_Supabases_actual_not_found_shape()
+    {
+        // Regression test: discovered via live verification against a real Supabase project that
+        // a missing object is reported as HTTP 400 with this JSON body — not a literal HTTP 404 as
+        // the test above (and the original implementation) assumed. That mismatch made the real
+        // download endpoint throw instead of returning null for an already-missing resume.
+        var (storage, handler, _) = CreateStorage();
+        handler.Respond = _ => new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent(
+                """{"statusCode":"404","error":"not_found","message":"Object not found","code":"NoSuchKey"}""",
+                Encoding.UTF8, "application/json"),
+        };
+
+        var result = await storage.OpenReadAsync("0123456789abcdef0123456789abcdef.pdf", TestContext.Current.CancellationToken);
+
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task OpenReadAsync_still_throws_on_an_unrelated_400_rather_than_treating_it_as_missing()
+    {
+        // A 400 is only "missing" when the body says so. Any other 400 (malformed request, bad
+        // bucket, etc.) must still surface as a genuine failure, not a silent null.
+        var (storage, handler, _) = CreateStorage();
+        handler.Respond = _ => new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent("""{"statusCode":"400","error":"InvalidRequest","message":"something else"}""", Encoding.UTF8, "application/json"),
+        };
+
+        var act = () => storage.OpenReadAsync("0123456789abcdef0123456789abcdef.pdf", TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
     public async Task OpenReadAsync_rejects_a_key_that_does_not_match_the_generated_shape_without_calling_out()
     {
         // No client in this codebase ever supplies a key, but this proves the defense-in-depth
@@ -181,6 +217,26 @@ public sealed class SupabaseResumeStorageTests
 
         handler.Method.Should().Be(HttpMethod.Delete);
         handler.RequestUri!.ToString().Should().Be($"{BucketBaseAddress}{key}");
+    }
+
+    [Fact]
+    public async Task DeleteAsync_treats_Supabases_actual_not_found_shape_as_a_clean_no_op()
+    {
+        // Same real-world shape as the OpenReadAsync regression above: deleting an object that's
+        // already gone (the IResumeStorage contract's documented no-op case — see
+        // LocalDiskResumeStorageTests) must not be logged as an orphan warning.
+        var (storage, handler, logger) = CreateStorage();
+        handler.Respond = _ => new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent(
+                """{"statusCode":"404","error":"not_found","message":"Object not found","code":"NoSuchKey"}""",
+                Encoding.UTF8, "application/json"),
+        };
+
+        var act = async () => await storage.DeleteAsync("0123456789abcdef0123456789abcdef.pdf", TestContext.Current.CancellationToken);
+
+        await act.Should().NotThrowAsync();
+        logger.Messages.Should().NotContain(m => m.Contains("orphaned"));
     }
 
     [Fact]

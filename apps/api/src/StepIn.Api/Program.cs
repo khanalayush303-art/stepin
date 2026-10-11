@@ -87,6 +87,7 @@ app.MapAuthEndpoints();
 app.MapProfileEndpoints();
 app.MapJobEndpoints();
 app.MapJobMatchEndpoints();
+app.MapResearchMatchEndpoints();
 app.MapApplicationEndpoints();
 app.MapRecruiterApplicationEndpoints();
 app.MapSavedJobEndpoints();

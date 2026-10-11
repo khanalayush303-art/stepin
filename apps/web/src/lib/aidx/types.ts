@@ -153,6 +153,32 @@ export interface Opportunity {
   projectTitle: string | null;
 }
 
+/** One Research opportunity (an existing StepIn Job) already linked to and open on a project. */
+export interface ResearchOpportunityLink {
+  jobId: string;
+  title: string;
+}
+
+/**
+ * Research-to-Career Bridge (GET /api/v1/aidx/research-matches, authenticated). "Unscored" means
+ * the project recorded no technologies to compare against — not a poor match. skillCoverage is
+ * null exactly when matchQuality is "Unscored". openOpportunities is what distinguishes "read
+ * about this project" from "there's a role open on it" — it is never a reason to show an apply
+ * button here; applying still goes through the existing job detail/apply flow.
+ */
+export interface ResearchMatch {
+  projectId: string;
+  title: string;
+  slug: string;
+  shortDescription: string;
+  researchAreas: string[];
+  matchedSkills: string[];
+  skillsNotYetDemonstrated: string[];
+  skillCoverage: number | null;
+  matchQuality: "Unscored" | "ExploreMatch" | "PartialMatch" | "StrongMatch";
+  openOpportunities: ResearchOpportunityLink[];
+}
+
 /** The public StepIn job detail (GET /api/v1/jobs/{id}), used for a research opportunity page. */
 export interface PublicJob {
   id: string;

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Bell, Bookmark, FileText, GraduationCap, LayoutDashboard, Search, Target, User } from "lucide-react";
+import { Bell, Bookmark, FileText, FlaskConical, GraduationCap, LayoutDashboard, Search, Target, User } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,7 @@ const NAV: DashboardNavItem[] = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/dashboard/discover", label: "Discover roles", icon: Search },
   { href: "/dashboard/matches", label: "Job matches", icon: Target },
+  { href: "/dashboard/research", label: "Research", icon: FlaskConical },
   { href: "/dashboard/applications", label: "Applications", icon: FileText, badge: "12" },
   { href: "/dashboard/saved", label: "Saved roles", icon: Bookmark, badge: "8" },
   { href: "/dashboard/interviews", label: "Interviews", icon: User, badge: "2" },

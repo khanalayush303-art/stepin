@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Bell, Bookmark, FileText, FlaskConical, GraduationCap, LayoutDashboard, Search, Target, User } from "lucide-react";
+import { FileText } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -10,23 +10,14 @@ import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApplicationStatusBadge } from "@/components/applications/application-status-badge";
-import { DashboardShell, type DashboardNavItem } from "@/components/dashboard/dashboard-shell";
+import { CANDIDATE_NAV } from "@/components/dashboard/candidate-nav";
+import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { formError } from "@/lib/auth/client";
 import { listApplications } from "@/lib/applications/api";
 import type { ApplicationSummary } from "@/lib/applications/types";
 import { formatDate } from "@/lib/utils";
 
-const NAV: DashboardNavItem[] = [
-  { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
-  { href: "/dashboard/discover", label: "Discover roles", icon: Search },
-  { href: "/dashboard/matches", label: "Job matches", icon: Target },
-  { href: "/dashboard/research", label: "Research", icon: FlaskConical },
-  { href: "/dashboard/applications", label: "Applications", icon: FileText, badge: "12" },
-  { href: "/dashboard/saved", label: "Saved roles", icon: Bookmark, badge: "8" },
-  { href: "/dashboard/interviews", label: "Interviews", icon: User, badge: "2" },
-  { href: "/dashboard/prepare", label: "Prepare", icon: GraduationCap },
-  { href: "/dashboard/notifications", label: "Notifications", icon: Bell, badge: "3" },
-];
+const NAV = CANDIDATE_NAV;
 
 export default function MyApplicationsPage() {
   const { getToken } = useAuth();

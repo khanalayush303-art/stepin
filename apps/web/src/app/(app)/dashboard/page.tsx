@@ -3,43 +3,21 @@
 import * as React from "react";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
-import {
-  BadgeCheck,
-  Bell,
-  Bookmark,
-  Clock,
-  FileText,
-  GraduationCap,
-  FlaskConical,
-  LayoutDashboard,
-  Search,
-  Target,
-  User,
-} from "lucide-react";
+import { BadgeCheck, Bell, Bookmark, Clock, FileText, Search, User } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ApplicationStatusIndicator } from "@/components/jobs/application-status-indicator";
-import { DashboardShell, type DashboardNavItem } from "@/components/dashboard/dashboard-shell";
+import { CANDIDATE_NAV } from "@/components/dashboard/candidate-nav";
+import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { APPLICATIONS, INTERVIEWS, JOBS, NOTIFICATIONS } from "@/lib/placeholder-data";
 import { formatDate } from "@/lib/utils";
 import { getCandidateProfile } from "@/lib/profile/api";
 
-const NAV: DashboardNavItem[] = [
-  { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
-  { href: "/dashboard/discover", label: "Discover roles", icon: Search },
-  { href: "/dashboard/matches", label: "Job matches", icon: Target },
-  { href: "/dashboard/research", label: "Research", icon: FlaskConical },
-  { href: "/dashboard/applications", label: "Applications", icon: FileText, badge: "12" },
-  { href: "/dashboard/saved", label: "Saved roles", icon: Bookmark, badge: "8" },
-  { href: "/dashboard/interviews", label: "Interviews", icon: User, badge: "2" },
-  { href: "/dashboard/prepare", label: "Prepare", icon: GraduationCap },
-  { href: "/dashboard/notifications", label: "Notifications", icon: Bell, badge: "3" },
-  { href: "/dashboard/profile", label: "My profile", icon: User },
-];
+const NAV = CANDIDATE_NAV;
 
 const NOTIFICATION_ICON = {
   info: Clock,

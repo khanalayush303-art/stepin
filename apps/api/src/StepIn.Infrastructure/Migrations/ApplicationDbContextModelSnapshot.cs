@@ -550,6 +550,102 @@ namespace StepIn.Infrastructure.Migrations
                     b.ToTable("JobApplications", "stepin");
                 });
 
+            modelBuilder.Entity("StepIn.Domain.Career.CareerGoal", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CandidateProfileId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<bool>("IsPrimary")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateOnly?>("TargetDate")
+                        .HasColumnType("date");
+
+                    b.Property<Guid?>("TargetJobId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("TargetRole")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CandidateProfileId");
+
+                    b.HasIndex("TargetJobId");
+
+                    b.ToTable("CareerGoals", "stepin");
+                });
+
+            modelBuilder.Entity("StepIn.Domain.Career.RoadmapItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CareerGoalId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<string>("Priority")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateOnly?>("TargetDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CareerGoalId");
+
+                    b.HasIndex("CareerGoalId", "Status");
+
+                    b.ToTable("RoadmapItems", "stepin");
+                });
+
             modelBuilder.Entity("StepIn.Domain.Companies.Company", b =>
                 {
                     b.Property<Guid>("Id")
@@ -993,11 +1089,13 @@ namespace StepIn.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("StepIn.Domain.Aidx.AidxResearchArea", null)
+                    b.HasOne("StepIn.Domain.Aidx.AidxResearchArea", "ResearchArea")
                         .WithMany()
                         .HasForeignKey("ResearchAreaId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("ResearchArea");
                 });
 
             modelBuilder.Entity("StepIn.Domain.Aidx.AidxProjectResearcher", b =>
@@ -1008,11 +1106,13 @@ namespace StepIn.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("StepIn.Domain.Aidx.AidxResearcher", null)
+                    b.HasOne("StepIn.Domain.Aidx.AidxResearcher", "Researcher")
                         .WithMany()
                         .HasForeignKey("ResearcherId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Researcher");
                 });
 
             modelBuilder.Entity("StepIn.Domain.Aidx.AidxProjectTechnology", b =>
@@ -1027,45 +1127,51 @@ namespace StepIn.Infrastructure.Migrations
             modelBuilder.Entity("StepIn.Domain.Aidx.AidxPublicationAuthor", b =>
                 {
                     b.HasOne("StepIn.Domain.Aidx.AidxPublication", null)
-                        .WithMany()
+                        .WithMany("Authors")
                         .HasForeignKey("PublicationId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("StepIn.Domain.Aidx.AidxResearcher", null)
+                    b.HasOne("StepIn.Domain.Aidx.AidxResearcher", "Researcher")
                         .WithMany()
                         .HasForeignKey("ResearcherId")
                         .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Researcher");
                 });
 
             modelBuilder.Entity("StepIn.Domain.Aidx.AidxPublicationProject", b =>
                 {
-                    b.HasOne("StepIn.Domain.Aidx.AidxProject", null)
+                    b.HasOne("StepIn.Domain.Aidx.AidxProject", "Project")
                         .WithMany()
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("StepIn.Domain.Aidx.AidxPublication", null)
-                        .WithMany()
+                        .WithMany("Projects")
                         .HasForeignKey("PublicationId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Project");
                 });
 
             modelBuilder.Entity("StepIn.Domain.Aidx.AidxPublicationResearchArea", b =>
                 {
                     b.HasOne("StepIn.Domain.Aidx.AidxPublication", null)
-                        .WithMany()
+                        .WithMany("ResearchAreas")
                         .HasForeignKey("PublicationId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("StepIn.Domain.Aidx.AidxResearchArea", null)
+                    b.HasOne("StepIn.Domain.Aidx.AidxResearchArea", "ResearchArea")
                         .WithMany()
                         .HasForeignKey("ResearchAreaId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("ResearchArea");
                 });
 
             modelBuilder.Entity("StepIn.Domain.Aidx.AidxResearcher", b =>
@@ -1091,6 +1197,25 @@ namespace StepIn.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Job");
+                });
+
+            modelBuilder.Entity("StepIn.Domain.Career.CareerGoal", b =>
+                {
+                    b.HasOne("StepIn.Domain.Jobs.Job", "TargetJob")
+                        .WithMany()
+                        .HasForeignKey("TargetJobId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("TargetJob");
+                });
+
+            modelBuilder.Entity("StepIn.Domain.Career.RoadmapItem", b =>
+                {
+                    b.HasOne("StepIn.Domain.Career.CareerGoal", null)
+                        .WithMany("RoadmapItems")
+                        .HasForeignKey("CareerGoalId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("StepIn.Domain.Jobs.Job", b =>
@@ -1193,6 +1318,20 @@ namespace StepIn.Infrastructure.Migrations
                     b.Navigation("Researchers");
 
                     b.Navigation("Technologies");
+                });
+
+            modelBuilder.Entity("StepIn.Domain.Aidx.AidxPublication", b =>
+                {
+                    b.Navigation("Authors");
+
+                    b.Navigation("Projects");
+
+                    b.Navigation("ResearchAreas");
+                });
+
+            modelBuilder.Entity("StepIn.Domain.Career.CareerGoal", b =>
+                {
+                    b.Navigation("RoadmapItems");
                 });
 
             modelBuilder.Entity("StepIn.Domain.Profiles.CandidateProfile", b =>

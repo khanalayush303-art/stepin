@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using StepIn.Application.Common.Interfaces;
 using StepIn.Domain.Aidx;
 using StepIn.Domain.Applications;
+using StepIn.Domain.Career;
 using StepIn.Domain.Common;
 using StepIn.Domain.Companies;
 using StepIn.Domain.Jobs;
@@ -38,6 +39,10 @@ public sealed class ApplicationDbContext(
     public DbSet<JobApplication> JobApplications => Set<JobApplication>();
 
     public DbSet<SavedJob> SavedJobs => Set<SavedJob>();
+
+    public DbSet<CareerGoal> CareerGoals => Set<CareerGoal>();
+
+    public DbSet<RoadmapItem> RoadmapItems => Set<RoadmapItem>();
 
     public DbSet<AidxResearchArea> AidxResearchAreas => Set<AidxResearchArea>();
 
@@ -96,6 +101,10 @@ public sealed class ApplicationDbContext(
     IQueryable<JobApplication> IApplicationDbContext.JobApplications => JobApplications;
 
     IQueryable<SavedJob> IApplicationDbContext.SavedJobs => SavedJobs;
+
+    IQueryable<CareerGoal> IApplicationDbContext.CareerGoals => CareerGoals;
+
+    IQueryable<RoadmapItem> IApplicationDbContext.RoadmapItems => RoadmapItems;
 
     void IApplicationDbContext.Add<TEntity>(TEntity entity) => Set<TEntity>().Add(entity);
 

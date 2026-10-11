@@ -1,5 +1,6 @@
 using StepIn.Domain.Aidx;
 using StepIn.Domain.Applications;
+using StepIn.Domain.Career;
 using StepIn.Domain.Companies;
 using StepIn.Domain.Jobs;
 using StepIn.Domain.Profiles;
@@ -34,6 +35,10 @@ public interface IApplicationDbContext
     IQueryable<JobApplication> JobApplications { get; }
 
     IQueryable<SavedJob> SavedJobs { get; }
+
+    IQueryable<CareerGoal> CareerGoals { get; }
+
+    IQueryable<RoadmapItem> RoadmapItems { get; }
 
     IQueryable<AidxResearchArea> AidxResearchAreas { get; }
 

@@ -2,20 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import {
-  Bell,
-  Bookmark,
-  Briefcase,
-  Building2,
-  FileText,
-  GraduationCap,
-  LayoutDashboard,
-  FlaskConical,
-  MapPin,
-  Search,
-  Target,
-  User,
-} from "lucide-react";
+import { Briefcase, Building2, MapPin, Search } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -24,7 +11,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { DashboardShell, type DashboardNavItem } from "@/components/dashboard/dashboard-shell";
+import { CANDIDATE_NAV } from "@/components/dashboard/candidate-nav";
+import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { SaveJobButton } from "@/components/jobs/save-job-button";
 import { formError } from "@/lib/auth/client";
 import { listPublicJobs } from "@/lib/jobs/api";
@@ -32,17 +20,7 @@ import type { EmploymentType, JobFilters, PublicJobSummary, WorkplaceType } from
 import { listSavedJobs } from "@/lib/savedJobs/api";
 import { formatDate } from "@/lib/utils";
 
-const NAV: DashboardNavItem[] = [
-  { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
-  { href: "/dashboard/discover", label: "Discover roles", icon: Search },
-  { href: "/dashboard/matches", label: "Job matches", icon: Target },
-  { href: "/dashboard/research", label: "Research", icon: FlaskConical },
-  { href: "/dashboard/applications", label: "Applications", icon: FileText, badge: "12" },
-  { href: "/dashboard/saved", label: "Saved roles", icon: Bookmark, badge: "8" },
-  { href: "/dashboard/interviews", label: "Interviews", icon: User, badge: "2" },
-  { href: "/dashboard/prepare", label: "Prepare", icon: GraduationCap },
-  { href: "/dashboard/notifications", label: "Notifications", icon: Bell, badge: "3" },
-];
+const NAV = CANDIDATE_NAV;
 
 const EMPLOYMENT_TYPE_OPTIONS: { value: EmploymentType; label: string }[] = [
   { value: "FullTime", label: "Full-time" },

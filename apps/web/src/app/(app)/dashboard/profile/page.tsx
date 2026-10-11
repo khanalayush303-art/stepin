@@ -1,19 +1,7 @@
 "use client";
 
 import * as React from "react";
-import {
-  Bell,
-  Bookmark,
-  FileText,
-  GraduationCap,
-  LayoutDashboard,
-  FlaskConical,
-  Plus,
-  Search,
-  Target,
-  Trash2,
-  User,
-} from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -22,7 +10,8 @@ import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { DashboardShell, type DashboardNavItem } from "@/components/dashboard/dashboard-shell";
+import { CANDIDATE_NAV } from "@/components/dashboard/candidate-nav";
+import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { ApiError, formError } from "@/lib/auth/client";
 import { getCandidateProfile, updateCandidateProfile } from "@/lib/profile/api";
 import type {
@@ -33,18 +22,7 @@ import type {
   UpdateCandidateProfileInput,
 } from "@/lib/profile/types";
 
-const NAV: DashboardNavItem[] = [
-  { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
-  { href: "/dashboard/discover", label: "Discover roles", icon: Search },
-  { href: "/dashboard/matches", label: "Job matches", icon: Target },
-  { href: "/dashboard/research", label: "Research", icon: FlaskConical },
-  { href: "/dashboard/applications", label: "Applications", icon: FileText, badge: "12" },
-  { href: "/dashboard/saved", label: "Saved roles", icon: Bookmark, badge: "8" },
-  { href: "/dashboard/interviews", label: "Interviews", icon: User, badge: "2" },
-  { href: "/dashboard/prepare", label: "Prepare", icon: GraduationCap },
-  { href: "/dashboard/notifications", label: "Notifications", icon: Bell, badge: "3" },
-  { href: "/dashboard/profile", label: "My profile", icon: User },
-];
+const NAV = CANDIDATE_NAV;
 
 interface FormState {
   phoneNumber: string;

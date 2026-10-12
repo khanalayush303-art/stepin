@@ -112,11 +112,24 @@ if (app.Environment.IsEnvironment("Testing"))
 }
 
 // ------------------------------------------------------- operator commands ---
-// One-off commands run instead of the web host. They never start Kestrel and never apply
-// migrations, so a command cannot happen as a side effect of booting the API.
+// One-off commands run instead of the web host. They never start Kestrel, and starting the web
+// host never runs one of these, so a command cannot happen as a side effect of booting the API.
 if (args.Contains(AidxOwnerInitCommand.Name, StringComparer.OrdinalIgnoreCase))
 {
     var exitCode = await AidxOwnerInitCommand.RunAsync(app.Services, Console.Out, CancellationToken.None);
+    await Log.CloseAndFlushAsync();
+    return exitCode;
+}
+
+if (args.Contains(MigrateDatabaseCommand.Name, StringComparer.OrdinalIgnoreCase))
+{
+    // The one argument after the command name is the operator-reviewed target migration id — see
+    // MigrateDatabaseCommand's own doc comment for why this is mandatory rather than "just migrate
+    // to latest".
+    var commandIndex = Array.FindIndex(args, a => string.Equals(a, MigrateDatabaseCommand.Name, StringComparison.OrdinalIgnoreCase));
+    var expectedFinalMigrationId = commandIndex + 1 < args.Length ? args[commandIndex + 1] : null;
+
+    var exitCode = await MigrateDatabaseCommand.RunAsync(app.Services, Console.Out, expectedFinalMigrationId, CancellationToken.None);
     await Log.CloseAndFlushAsync();
     return exitCode;
 }

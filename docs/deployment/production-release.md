@@ -62,7 +62,72 @@ restored copy of production data, which is still required.
 ## 2. Apply the migration
 
 Migrations are **not** applied at API startup outside Development (`Program.cs`). This step is the only
-way production gets the AIDX schema.
+way production gets a new schema.
+
+### Preferred: the `migrate-database` operator command (added 2026-10-13)
+
+`StepIn.Api.Operations.MigrateDatabaseCommand` applies pending migrations using the application's
+own, already-deployed `ConnectionStrings__Postgres` — the exact configuration the running API reads,
+with no connection string ever typed, copied, or pasted by the operator. It runs the same way
+`aidx-init-owner` does (see §4 below): inside the already-deployed container, over `fly ssh console`,
+so the real secret never leaves the machine and never passes through an operator's own shell history
+or this repository.
+
+```bash
+fly ssh console -a stepin-api -C "dotnet StepIn.Api.dll migrate-database <expected-final-migration-id>"
+```
+
+`<expected-final-migration-id>` is **mandatory** and is the actual safety gate, not a formality: name
+the last migration you reviewed and intend to apply this run (for this release,
+`20261012131143_AddExperiencePassport`). The command:
+
+1. Connects using the already-configured connection string; reports and exits (code 2) if it can't,
+   touching nothing.
+2. Reads the migrations compiled into the running image and the database's own applied-migration
+   history; refuses (code 3) if the history contains a migration this image doesn't recognise — a
+   newer or divergent schema than expected — without applying anything.
+3. Computes the pending migrations and refuses (code 3) unless the *last* one is exactly the named
+   target — so a migration that shipped in this image but wasn't named is never silently applied, and
+   naming an earlier migration than what's actually last pending is refused rather than silently
+   under-applying.
+4. If nothing is pending, reports "already up to date" and exits 0 — safe to re-run.
+5. Otherwise holds a PostgreSQL session-level advisory lock (`pg_try_advisory_lock`) for the duration
+   of the migration, so two operators (or two machines) invoking this at the same moment can't race;
+   the loser refuses cleanly (code 3) instead of migrating concurrently.
+6. Applies the migrations via `context.Database.MigrateAsync()`, the same EF Core API `dotnet ef
+   database update` itself calls underneath.
+
+Exit codes: `0` = up to date or migrated successfully, `1` = failure applying migrations (the
+database may be partially migrated — do not retry blindly; inspect
+`stepin.__ef_migrations_history` first), `2` = couldn't connect, `3` = a safety precondition refused
+the run (nothing was written), `4` = the target migration id argument was missing.
+
+It is dispatched the same way `aidx-init-owner` is, in `Program.cs`, before the web host starts: never
+an HTTP endpoint, never run by the container entrypoint, startup, or health checks, and never
+triggered automatically by an ordinary deploy — a command only runs when its name is passed as a
+`fly ssh console -C` argument, so applying migrations can never happen as a side effect of booting or
+redeploying the API. Tested locally against disposable Testcontainers Postgres instances
+(`MigrateDatabaseCommandTests`): unreachable database, unrecognised target id, naming an earlier
+migration than what's actually pending, a database with an applied migration this build doesn't
+recognise, a full successful run, and a safe idempotent re-run.
+
+**Not configured as a Fly `release_command`:** a release command's string is fixed in `fly.toml` and
+runs unconditionally on every future deploy, which can't express "name the specific migration you
+reviewed for *this* release" — the whole point of the mandatory argument. Wiring this up automatically
+would either hardcode a single migration id that goes stale the moment the next migration ships, or
+silently fall back to "latest," defeating the safety gate. Until a safer way to parameterise a release
+command per-release exists, run this manually, once, per release that actually adds a migration.
+
+**Verify after running:** the command's own output already reports applied/pending counts and the
+final migration id; independently confirm via a read-only query (same `fly proxy`/`fly ssh console`
+access): `SELECT "MigrationId" FROM stepin.__ef_migrations_history ORDER BY 1;` (the table name and
+schema are fixed in code — see `DependencyInjection.cs`'s `npgsql.MigrationsHistoryTable(...)` call —
+never assume the EF Core default of `public.__EFMigrationsHistory`).
+
+### Fallback: `fly proxy` + `dotnet ef database update`
+
+If the operator command above is unavailable (e.g. before it was added, or the deployed image
+predates it), apply migrations from a local checkout instead:
 
 ```bash
 # from apps/api, with the production connection supplied via environment, through `fly proxy`
@@ -263,15 +328,46 @@ Run in production after step 5, with a real account for each role:
 - [ ] The opportunity opens at `/jobs/{id}`, a candidate applies, the recruiter sees the application and updates its status.
 - [ ] Resume upload and download work (see Resume storage).
 
-## Career Intelligence release (Phases 1–7, not yet pushed)
+### Career Intelligence (after the 4 migrations above are applied and this release is deployed)
 
-As of 2026-10-13, `master` is 7 commits ahead of `origin/master` (`2a0331e`…`47192f9`), adding
-Transparent Job Match, Research-to-Career Bridge, Career GPS, Proof-of-Skills Portfolio, Interview
-Practice Studio, Experience Passport, and an integration-audit fix pass. None of these commits, and
-none of the 5 migrations they add (`AddCareerGoals`, `AddPortfolioProjects`, `AddInterviewPractice`,
-`AddExperiencePassport`, on top of the already-released `AddAidxFoundations`), have been pushed,
-deployed, or applied to production. All were verified only against the local development database
-and a local xUnit/Testcontainers-backed suite (438/438 passing at the last checkpoint).
+- [ ] `/health/live` and `/health/ready` both healthy.
+- [ ] `GET /api/v1/jobs/matches` as an applicant: zero-skill jobs report `Unscored`, not 0%.
+- [ ] `GET /api/v1/aidx/research-matches` as an applicant loads without error.
+- [ ] `/dashboard/career-gps`: create a goal, add a roadmap item, see a skill gap (or an honest
+      "no target job" state).
+- [ ] `/dashboard/portfolio`: create a project (defaults Private), set it Public.
+- [ ] `/dashboard/interview-practice`: start a session, answer a question, see rubric-based feedback
+      labelled as such (not AI-generated).
+- [ ] `/dashboard/experience-passport`: create a record, submit it. Confirm it reaches
+      `/admin/verification` only once an authorized Admin exists (see the prerequisite above) —
+      otherwise this step is explicitly blocked, not silently skipped.
+- [ ] Recruiter application detail (`GET /api/v1/recruiter/applications/{id}`) still loads — this is
+      the existing endpoint that now also queries the 2 new tables; confirm it returns 200 with
+      `portfolioProjects`/`experienceRecords` present (possibly empty arrays), not a 500.
+- [ ] A different candidate cannot see another candidate's Private portfolio/experience records
+      (navigate directly by id; expect 404).
+
+## Career Intelligence release (Phases 1–7)
+
+As of 2026-10-13, `origin/master` is at `c4a0e9e` — the 8 commits adding Transparent Job Match,
+Research-to-Career Bridge, Career GPS, Proof-of-Skills Portfolio, Interview Practice Studio,
+Experience Passport, and an integration-audit fix pass have been **pushed**, verified by a fresh
+438/438 backend test run and clean frontend typecheck/lint/build at that exact commit. They have
+**not** been deployed or migrated to production.
+
+Exactly **4** new migrations are pending in production, not 5 — a figure corrected during
+verification: `AddAidxFoundations` (`20261005021348`) is an ancestor of the *previous* remote tip
+(`be8da5b`) and has been live across multiple prior releases (confirmed via git ancestry and the
+production API already serving AIDX routes; not independently confirmed by a direct production
+schema query). The 4 actually pending are, in order:
+
+1. `20261011140004_AddCareerGoals`
+2. `20261012000657_AddPortfolioProjects`
+3. `20261012031355_AddInterviewPractice`
+4. `20261012131143_AddExperiencePassport`
+
+Apply them with the `migrate-database` operator command above, naming
+`20261012131143_AddExperiencePassport` as the target — it applies all 4 in order in one invocation.
 
 Additional prerequisites specific to this release, beyond the AIDX owner step above:
 
@@ -280,10 +376,16 @@ Additional prerequisites specific to this release, beyond the AIDX owner step ab
   the same documented `UPDATE ... SET "Role" = 'Admin'` step used for every other admin-only feature
   in this codebase. Do not create one as a side effect of deploying; it is a separate, explicit
   operator action, taken only after confirming who the production admin should be.
-- These 5 migrations are additive only (new tables, no altered existing columns) — same
+- These 4 migrations are additive only (new tables, no altered existing columns) — same
   compatibility shape as `AddAidxFoundations` above, so the same "migrate first, then release the
   API" ordering applies, and the old API continues to work against the migrated schema in the
   window between the two.
+- **Unlike `AddAidxFoundations`, this release's compatibility is one-directional, not safe in the
+  other order.** The new `RecruiterApplicationEndpoints.GetApplicationAsync`/`UpdateStatusAsync`
+  unconditionally query `PortfolioProjects` and `ExperienceRecords` — tables that don't exist until
+  these 4 migrations are applied. Deploying the new API image before migrating would make the
+  *existing, currently-working* recruiter application-detail endpoint fail for every request, not
+  just the new Career Intelligence routes. Migrate first. Always.
 - Re-run the Resume storage verification above after this release if resume-adjacent code changes —
   it did not change in this phase, so no new verification is required solely for Career
   Intelligence, but confirm the running image's commit before assuming the earlier Supabase fix

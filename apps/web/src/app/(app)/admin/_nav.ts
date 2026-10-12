@@ -29,7 +29,7 @@ export const ADMIN_NAV: DashboardNavItem[] = [
   { href: "/admin/aidx/news", label: "AIDX news", icon: Newspaper },
   { href: "/admin/aidx/events", label: "AIDX events", icon: CalendarDays },
   { href: "/admin/aidx/opportunities", label: "AIDX opportunities", icon: Lightbulb },
-  { href: "/admin/verification", label: "Verification", icon: ShieldCheck, badge: "7" },
+  { href: "/admin/verification", label: "Verification", icon: ShieldCheck },
   { href: "/admin/reports", label: "Reports", icon: TrendingUp },
   { href: "/admin/audit", label: "Audit log", icon: ScrollText },
 ];

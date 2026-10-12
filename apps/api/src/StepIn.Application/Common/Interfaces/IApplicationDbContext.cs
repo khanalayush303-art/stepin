@@ -2,6 +2,7 @@ using StepIn.Domain.Aidx;
 using StepIn.Domain.Applications;
 using StepIn.Domain.Career;
 using StepIn.Domain.Companies;
+using StepIn.Domain.Experience;
 using StepIn.Domain.Interviews;
 using StepIn.Domain.Portfolio;
 using StepIn.Domain.Jobs;
@@ -47,6 +48,10 @@ public interface IApplicationDbContext
     IQueryable<InterviewPracticeSession> InterviewPracticeSessions { get; }
 
     IQueryable<InterviewPracticeQuestion> InterviewPracticeQuestions { get; }
+
+    IQueryable<ExperienceRecord> ExperienceRecords { get; }
+
+    IQueryable<ExperienceVerificationAudit> ExperienceVerificationAudits { get; }
 
     IQueryable<AidxResearchArea> AidxResearchAreas { get; }
 

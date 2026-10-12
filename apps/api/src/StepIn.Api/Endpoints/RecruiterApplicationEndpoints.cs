@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using StepIn.Api.Infrastructure;
 using StepIn.Application.Common.Interfaces;
 using StepIn.Domain.Applications;
+using StepIn.Domain.Experience;
 using StepIn.Domain.Portfolio;
 using StepIn.Domain.Profiles;
 
@@ -162,7 +163,8 @@ public static class RecruiterApplicationEndpoints
         }
 
         var portfolioProjects = await LoadPublicPortfolioProjectsAsync(db, application.CandidateProfileId, cancellationToken);
-        return Results.Ok(ToResponse(application, applicant, portfolioProjects));
+        var experienceRecords = await LoadPublicExperienceRecordsAsync(db, application.CandidateProfileId, cancellationToken);
+        return Results.Ok(ToResponse(application, applicant, portfolioProjects, experienceRecords));
     }
 
     private static async Task<IResult> DownloadResumeAsync(
@@ -225,7 +227,8 @@ public static class RecruiterApplicationEndpoints
         }
 
         var portfolioProjects = await LoadPublicPortfolioProjectsAsync(db, application.CandidateProfileId, cancellationToken);
-        return Results.Ok(ToResponse(application, applicant, portfolioProjects));
+        var experienceRecords = await LoadPublicExperienceRecordsAsync(db, application.CandidateProfileId, cancellationToken);
+        return Results.Ok(ToResponse(application, applicant, portfolioProjects, experienceRecords));
     }
 
     // ----------------------------------------------------------------- shared ---
@@ -312,7 +315,10 @@ public static class RecruiterApplicationEndpoints
     // accurate stand-in for "status last changed": Status is the only field
     // ever mutated on a JobApplication after creation.
     private static RecruiterApplicationResponse ToResponse(
-        JobApplication application, ApplicantInfo applicant, IReadOnlyList<PublicPortfolioProjectResponse> portfolioProjects) => new(
+        JobApplication application,
+        ApplicantInfo applicant,
+        IReadOnlyList<PublicPortfolioProjectResponse> portfolioProjects,
+        IReadOnlyList<PublicExperienceRecordResponse> experienceRecords) => new(
         application.Id,
         application.JobId,
         application.Job.Title,
@@ -323,7 +329,8 @@ public static class RecruiterApplicationEndpoints
         application.ResumeOriginalFileName,
         application.CreatedAt,
         application.UpdatedAt ?? application.CreatedAt,
-        portfolioProjects);
+        portfolioProjects,
+        experienceRecords);
 
     /// <summary>
     /// The only query in the codebase that ever returns one candidate's portfolio projects to
@@ -347,6 +354,22 @@ public static class RecruiterApplicationEndpoints
                 p.RepositoryUrl,
                 p.DemoUrl,
                 p.ResearchProject == null ? null : p.ResearchProject.Title))
+            .ToListAsync(cancellationToken);
+
+    /// <summary>
+    /// The only query in the codebase that ever returns one candidate's experience records to
+    /// someone other than that candidate — scoped to Public visibility in the WHERE clause
+    /// itself. The real Status is always included: a recruiter never sees "Public" presented as a
+    /// substitute for "Verified".
+    /// </summary>
+    private static Task<List<PublicExperienceRecordResponse>> LoadPublicExperienceRecordsAsync(
+        IApplicationDbContext db, Guid candidateProfileId, CancellationToken cancellationToken) =>
+        db.ExperienceRecords
+            .AsNoTracking()
+            .Where(r => r.CandidateProfileId == candidateProfileId && r.Visibility == ExperienceVisibility.Public)
+            .OrderByDescending(r => r.CreatedAt)
+            .Select(r => new PublicExperienceRecordResponse(
+                r.Id, r.RecordType.ToString(), r.Title, r.Organization, r.Description, r.StartDate, r.EndDate, r.Skills, r.Status.ToString()))
             .ToListAsync(cancellationToken);
 
     private sealed record ApplicantInfo(string FirstName, string LastName, string Email);

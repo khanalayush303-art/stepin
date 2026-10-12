@@ -20,9 +20,12 @@ public sealed record RecruiterApplicationSummaryResponse(
     DateTimeOffset CreatedAt);
 
 /// <summary>
-/// PortfolioProjects contains only the applicant's Public-visibility portfolio projects — never
-/// Private ones — sourced via the applicant's CandidateProfileId, the same ownership chain this
-/// whole response is already scoped by. See <see cref="PublicPortfolioProjectResponse"/>.
+/// PortfolioProjects and ExperienceRecords contain only the applicant's Public-visibility items —
+/// never Private ones — sourced via the applicant's CandidateProfileId, the same ownership chain
+/// this whole response is already scoped by. A Public experience record still carries its real
+/// verification Status (e.g. "Submitted", not "Verified") — Public is never presented as a
+/// synonym for Verified. See <see cref="PublicPortfolioProjectResponse"/> and
+/// <see cref="PublicExperienceRecordResponse"/>.
 /// </summary>
 public sealed record RecruiterApplicationResponse(
     Guid Id,
@@ -35,7 +38,8 @@ public sealed record RecruiterApplicationResponse(
     string ResumeFileName,
     DateTimeOffset CreatedAt,
     DateTimeOffset StatusUpdatedAt,
-    IReadOnlyList<PublicPortfolioProjectResponse> PortfolioProjects);
+    IReadOnlyList<PublicPortfolioProjectResponse> PortfolioProjects,
+    IReadOnlyList<PublicExperienceRecordResponse> ExperienceRecords);
 
 /// <summary>
 /// Deliberately the only field — no JobId/CandidateProfileId/RecruiterProfileId

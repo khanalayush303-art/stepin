@@ -63,10 +63,19 @@ for (const path of [
   "/dashboard/portfolio/123",
   "/dashboard/interview-practice",
   "/dashboard/interview-practice/123",
+  "/dashboard/experience-passport",
+  "/dashboard/experience-passport/123",
 ]) {
   test(`${path} redirects an unauthenticated visitor to sign-in`, async ({ page }) => {
     await page.goto(path);
     await expect(page).toHaveURL(/\/sign-in\?returnTo=%2Fdashboard$/);
+  });
+}
+
+for (const path of ["/admin/verification", "/admin/verification/123"]) {
+  test(`${path} redirects an unauthenticated visitor to sign-in`, async ({ page }) => {
+    await page.goto(path);
+    await expect(page).toHaveURL(/\/sign-in\?returnTo=%2Fadmin$/);
   });
 }
 

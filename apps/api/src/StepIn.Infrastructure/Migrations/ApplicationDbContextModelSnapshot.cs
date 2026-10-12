@@ -688,6 +688,128 @@ namespace StepIn.Infrastructure.Migrations
                     b.ToTable("Companies", "stepin");
                 });
 
+            modelBuilder.Entity("StepIn.Domain.Experience.ExperienceRecord", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CandidateProfileId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(5000)
+                        .HasColumnType("character varying(5000)");
+
+                    b.Property<DateOnly?>("EndDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("EvidenceUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Organization")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("RecordType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.PrimitiveCollection<string[]>("Skills")
+                        .IsRequired()
+                        .HasColumnType("text[]");
+
+                    b.Property<DateOnly?>("StartDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTimeOffset?>("SubmittedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("Visibility")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CandidateProfileId");
+
+                    b.HasIndex("CandidateProfileId", "CreatedAt");
+
+                    b.HasIndex("CandidateProfileId", "Status");
+
+                    b.HasIndex("Status", "SubmittedAt");
+
+                    b.ToTable("ExperienceRecords", "stepin");
+                });
+
+            modelBuilder.Entity("StepIn.Domain.Experience.ExperienceVerificationAudit", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("ActorRole")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid>("ActorUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<Guid>("ExperienceRecordId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("NewStatus")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<string>("PreviousStatus")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExperienceRecordId", "CreatedAt");
+
+                    b.ToTable("ExperienceVerificationAudits", "stepin");
+                });
+
             modelBuilder.Entity("StepIn.Domain.Interviews.InterviewPracticeQuestion", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1366,6 +1488,15 @@ namespace StepIn.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("StepIn.Domain.Experience.ExperienceVerificationAudit", b =>
+                {
+                    b.HasOne("StepIn.Domain.Experience.ExperienceRecord", null)
+                        .WithMany("AuditEntries")
+                        .HasForeignKey("ExperienceRecordId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("StepIn.Domain.Interviews.InterviewPracticeQuestion", b =>
                 {
                     b.HasOne("StepIn.Domain.Interviews.InterviewPracticeSession", null)
@@ -1499,6 +1630,11 @@ namespace StepIn.Infrastructure.Migrations
             modelBuilder.Entity("StepIn.Domain.Career.CareerGoal", b =>
                 {
                     b.Navigation("RoadmapItems");
+                });
+
+            modelBuilder.Entity("StepIn.Domain.Experience.ExperienceRecord", b =>
+                {
+                    b.Navigation("AuditEntries");
                 });
 
             modelBuilder.Entity("StepIn.Domain.Interviews.InterviewPracticeSession", b =>

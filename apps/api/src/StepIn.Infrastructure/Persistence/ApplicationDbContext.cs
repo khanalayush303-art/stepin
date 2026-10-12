@@ -5,6 +5,7 @@ using StepIn.Domain.Applications;
 using StepIn.Domain.Career;
 using StepIn.Domain.Common;
 using StepIn.Domain.Companies;
+using StepIn.Domain.Experience;
 using StepIn.Domain.Interviews;
 using StepIn.Domain.Portfolio;
 using StepIn.Domain.Jobs;
@@ -51,6 +52,10 @@ public sealed class ApplicationDbContext(
     public DbSet<InterviewPracticeSession> InterviewPracticeSessions => Set<InterviewPracticeSession>();
 
     public DbSet<InterviewPracticeQuestion> InterviewPracticeQuestions => Set<InterviewPracticeQuestion>();
+
+    public DbSet<ExperienceRecord> ExperienceRecords => Set<ExperienceRecord>();
+
+    public DbSet<ExperienceVerificationAudit> ExperienceVerificationAudits => Set<ExperienceVerificationAudit>();
 
     public DbSet<AidxResearchArea> AidxResearchAreas => Set<AidxResearchArea>();
 
@@ -119,6 +124,10 @@ public sealed class ApplicationDbContext(
     IQueryable<InterviewPracticeSession> IApplicationDbContext.InterviewPracticeSessions => InterviewPracticeSessions;
 
     IQueryable<InterviewPracticeQuestion> IApplicationDbContext.InterviewPracticeQuestions => InterviewPracticeQuestions;
+
+    IQueryable<ExperienceRecord> IApplicationDbContext.ExperienceRecords => ExperienceRecords;
+
+    IQueryable<ExperienceVerificationAudit> IApplicationDbContext.ExperienceVerificationAudits => ExperienceVerificationAudits;
 
     void IApplicationDbContext.Add<TEntity>(TEntity entity) => Set<TEntity>().Add(entity);
 

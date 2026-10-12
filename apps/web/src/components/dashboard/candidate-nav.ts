@@ -1,4 +1,4 @@
-import { Bell, Bookmark, Compass, FileText, FlaskConical, GraduationCap, LayoutDashboard, Search, Target, User } from "lucide-react";
+import { Bell, Bookmark, Compass, FileText, FlaskConical, FolderGit2, GraduationCap, LayoutDashboard, Search, Target, User } from "lucide-react";
 import type { DashboardNavItem } from "./dashboard-shell";
 
 /**
@@ -13,6 +13,7 @@ export const CANDIDATE_NAV: DashboardNavItem[] = [
   { href: "/dashboard/matches", label: "Job matches", icon: Target },
   { href: "/dashboard/research", label: "Research", icon: FlaskConical },
   { href: "/dashboard/career-gps", label: "Career GPS", icon: Compass },
+  { href: "/dashboard/portfolio", label: "Portfolio", icon: FolderGit2 },
   { href: "/dashboard/applications", label: "Applications", icon: FileText, badge: "12" },
   { href: "/dashboard/saved", label: "Saved roles", icon: Bookmark, badge: "8" },
   { href: "/dashboard/interviews", label: "Interviews", icon: User, badge: "2" },

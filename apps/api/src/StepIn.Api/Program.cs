@@ -89,6 +89,7 @@ app.MapJobEndpoints();
 app.MapJobMatchEndpoints();
 app.MapResearchMatchEndpoints();
 app.MapCareerGoalEndpoints();
+app.MapPortfolioEndpoints();
 app.MapApplicationEndpoints();
 app.MapRecruiterApplicationEndpoints();
 app.MapSavedJobEndpoints();

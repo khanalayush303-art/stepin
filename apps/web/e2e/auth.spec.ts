@@ -57,6 +57,10 @@ for (const path of [
   "/dashboard/discover/123/apply",
   "/dashboard/applications",
   "/dashboard/applications/123",
+  "/dashboard/career-gps",
+  "/dashboard/career-gps/123",
+  "/dashboard/portfolio",
+  "/dashboard/portfolio/123",
 ]) {
   test(`${path} redirects an unauthenticated visitor to sign-in`, async ({ page }) => {
     await page.goto(path);

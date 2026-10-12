@@ -19,6 +19,11 @@ public sealed record RecruiterApplicationSummaryResponse(
     string ResumeFileName,
     DateTimeOffset CreatedAt);
 
+/// <summary>
+/// PortfolioProjects contains only the applicant's Public-visibility portfolio projects — never
+/// Private ones — sourced via the applicant's CandidateProfileId, the same ownership chain this
+/// whole response is already scoped by. See <see cref="PublicPortfolioProjectResponse"/>.
+/// </summary>
 public sealed record RecruiterApplicationResponse(
     Guid Id,
     Guid JobId,
@@ -29,7 +34,8 @@ public sealed record RecruiterApplicationResponse(
     string? CoverLetter,
     string ResumeFileName,
     DateTimeOffset CreatedAt,
-    DateTimeOffset StatusUpdatedAt);
+    DateTimeOffset StatusUpdatedAt,
+    IReadOnlyList<PublicPortfolioProjectResponse> PortfolioProjects);
 
 /// <summary>
 /// Deliberately the only field — no JobId/CandidateProfileId/RecruiterProfileId

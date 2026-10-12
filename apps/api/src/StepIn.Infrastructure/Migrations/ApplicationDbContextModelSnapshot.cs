@@ -798,6 +798,68 @@ namespace StepIn.Infrastructure.Migrations
                     b.ToTable("SavedJobs", "stepin");
                 });
 
+            modelBuilder.Entity("StepIn.Domain.Portfolio.PortfolioProject", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CandidateProfileId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("DemoUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(5000)
+                        .HasColumnType("character varying(5000)");
+
+                    b.Property<DateOnly?>("EndDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("RepositoryUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<Guid?>("ResearchProjectId")
+                        .HasColumnType("uuid");
+
+                    b.PrimitiveCollection<string[]>("Skills")
+                        .IsRequired()
+                        .HasColumnType("text[]");
+
+                    b.Property<DateOnly?>("StartDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("Visibility")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CandidateProfileId");
+
+                    b.HasIndex("ResearchProjectId");
+
+                    b.HasIndex("CandidateProfileId", "Visibility");
+
+                    b.ToTable("PortfolioProjects", "stepin");
+                });
+
             modelBuilder.Entity("StepIn.Domain.Profiles.CandidateCertification", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1257,6 +1319,16 @@ namespace StepIn.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Job");
+                });
+
+            modelBuilder.Entity("StepIn.Domain.Portfolio.PortfolioProject", b =>
+                {
+                    b.HasOne("StepIn.Domain.Aidx.AidxProject", "ResearchProject")
+                        .WithMany()
+                        .HasForeignKey("ResearchProjectId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("ResearchProject");
                 });
 
             modelBuilder.Entity("StepIn.Domain.Profiles.CandidateCertification", b =>

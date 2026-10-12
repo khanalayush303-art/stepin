@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using StepIn.Api.Infrastructure;
 using StepIn.Application.Common.Interfaces;
 using StepIn.Domain.Applications;
+using StepIn.Domain.Portfolio;
 using StepIn.Domain.Profiles;
 
 namespace StepIn.Api.Endpoints;
@@ -160,7 +161,8 @@ public static class RecruiterApplicationEndpoints
             return Results.NotFound();
         }
 
-        return Results.Ok(ToResponse(application, applicant));
+        var portfolioProjects = await LoadPublicPortfolioProjectsAsync(db, application.CandidateProfileId, cancellationToken);
+        return Results.Ok(ToResponse(application, applicant, portfolioProjects));
     }
 
     private static async Task<IResult> DownloadResumeAsync(
@@ -222,7 +224,8 @@ public static class RecruiterApplicationEndpoints
             return Results.NotFound();
         }
 
-        return Results.Ok(ToResponse(application, applicant));
+        var portfolioProjects = await LoadPublicPortfolioProjectsAsync(db, application.CandidateProfileId, cancellationToken);
+        return Results.Ok(ToResponse(application, applicant, portfolioProjects));
     }
 
     // ----------------------------------------------------------------- shared ---
@@ -308,7 +311,8 @@ public static class RecruiterApplicationEndpoints
     // See ApplicationEndpoints.ToResponse for why Entity.UpdatedAt is an
     // accurate stand-in for "status last changed": Status is the only field
     // ever mutated on a JobApplication after creation.
-    private static RecruiterApplicationResponse ToResponse(JobApplication application, ApplicantInfo applicant) => new(
+    private static RecruiterApplicationResponse ToResponse(
+        JobApplication application, ApplicantInfo applicant, IReadOnlyList<PublicPortfolioProjectResponse> portfolioProjects) => new(
         application.Id,
         application.JobId,
         application.Job.Title,
@@ -318,7 +322,32 @@ public static class RecruiterApplicationEndpoints
         application.CoverLetter,
         application.ResumeOriginalFileName,
         application.CreatedAt,
-        application.UpdatedAt ?? application.CreatedAt);
+        application.UpdatedAt ?? application.CreatedAt,
+        portfolioProjects);
+
+    /// <summary>
+    /// The only query in the codebase that ever returns one candidate's portfolio projects to
+    /// someone other than that candidate — scoped to Public visibility in the WHERE clause itself,
+    /// never filtered client-side, so a Private project can never leak here even by a future
+    /// response-shape mistake.
+    /// </summary>
+    private static Task<List<PublicPortfolioProjectResponse>> LoadPublicPortfolioProjectsAsync(
+        IApplicationDbContext db, Guid candidateProfileId, CancellationToken cancellationToken) =>
+        db.PortfolioProjects
+            .AsNoTracking()
+            .Where(p => p.CandidateProfileId == candidateProfileId && p.Visibility == PortfolioVisibility.Public)
+            .OrderByDescending(p => p.CreatedAt)
+            .Select(p => new PublicPortfolioProjectResponse(
+                p.Id,
+                p.Title,
+                p.Description,
+                p.Skills,
+                p.StartDate,
+                p.EndDate,
+                p.RepositoryUrl,
+                p.DemoUrl,
+                p.ResearchProject == null ? null : p.ResearchProject.Title))
+            .ToListAsync(cancellationToken);
 
     private sealed record ApplicantInfo(string FirstName, string LastName, string Email);
 }

@@ -150,17 +150,33 @@ Verify after the deploy:
   volume needs ownership fixed for user `app` before release. Do not run the container as root to work
   around it.
 
-As of this writing `stepin_resumes` exists but is **unattached** — the backend runs on `Storage__Provider`
-unset (defaulting to `Local`'s unmounted path), so resumes currently do not survive a redeploy either way.
+**Superseded — see Option B below.** As of a read-only `fly secrets list -a stepin-api` check on
+2026-10-13, `Storage__Provider` and all three `Storage__Supabase__*` keys are present and show
+`Deployed`, which is consistent with Option B being the active configuration — but a secret's
+*name* being set is not proof of its *value*; the actual provider string was not and should not be
+printed. Confirm the effective provider from application logs or a live round-trip test if this
+needs re-confirming, rather than assuming either option from this document alone.
 
 ### Option B — Supabase Storage (`SupabaseResumeStorage`)
 
-**Status as of this writing: NOT ACTIVATED.** No Supabase project exists for this app yet (verified: no
-Supabase CLI, MCP connector, or `SUPABASE_*` environment variable present in this environment; no
-`Storage__Supabase__*` Fly secret set on `stepin-api`). The code is implemented and fully covered by
-offline tests (310/310 backend tests passing), but has never been exercised against a real Supabase
-project. Creating that project, and approving activation, are the two remaining steps — see the Git
-history for the implementation commit (`feat(storage): add optional Supabase-backed resume storage`).
+**Status as of 2026-10-13 (read-only verification):** `Storage__Provider`, `Storage__Supabase__Url`,
+`Storage__Supabase__ServiceKey`, and `Storage__Supabase__Bucket` are all present on `stepin-api` and
+`Deployed` per `fly secrets list` (names/digests only — values were never requested or printed). This
+corroborates the live-verification evidence recorded against commit `be8da5b`'s message (upload,
+download, delete all passed against a real private bucket). It does **not** by itself prove the
+*currently running* machine image has that fix: `fly releases -a stepin-api` shows the latest
+deployed release is **v17**, dated **2026-10-11 13:06**, which predates `be8da5b` (**2026-10-12
+00:04**, the commit that fixed `OpenReadAsync`/`DeleteAsync`'s handling of Supabase's actual
+not-found response shape). In other words: the fix is on `origin/master`, but there is no evidence
+a `v18` was ever deployed to apply it. Confirm the running image's commit (`org.opencontainers.image.revision`
+label, if the running image carries one) before treating the fix as live.
+
+`fly status -a stepin-api` on the same date showed both machines `stopped` (app-level `suspended`),
+consistent with `fly.toml`'s `auto_stop_machines = 'stop'` / `min_machines_running = 0` — this is the
+app's own idle scale-to-zero behavior, not an incident. A direct `GET /health/live` and
+`GET /health/ready` against `https://stepin-api.fly.dev` both returned **200** (the first request
+triggering the expected auto-start), and `https://stepin-psi.vercel.app/` returned **200** — the
+production API and frontend are both reachable and healthy as of this check.
 
 Persists resumes in a private Supabase Storage bucket over its plain HTTP object API, so they survive
 every redeploy, container replacement, and restart. No Fly volume is involved; `stepin_resumes` is left
@@ -246,6 +262,32 @@ Run in production after step 5, with a real account for each role:
 - [ ] Admin creates a research opportunity, links a published project, publishes it. It appears on `/aidx/opportunities`.
 - [ ] The opportunity opens at `/jobs/{id}`, a candidate applies, the recruiter sees the application and updates its status.
 - [ ] Resume upload and download work (see Resume storage).
+
+## Career Intelligence release (Phases 1–7, not yet pushed)
+
+As of 2026-10-13, `master` is 7 commits ahead of `origin/master` (`2a0331e`…`47192f9`), adding
+Transparent Job Match, Research-to-Career Bridge, Career GPS, Proof-of-Skills Portfolio, Interview
+Practice Studio, Experience Passport, and an integration-audit fix pass. None of these commits, and
+none of the 5 migrations they add (`AddCareerGoals`, `AddPortfolioProjects`, `AddInterviewPractice`,
+`AddExperiencePassport`, on top of the already-released `AddAidxFoundations`), have been pushed,
+deployed, or applied to production. All were verified only against the local development database
+and a local xUnit/Testcontainers-backed suite (438/438 passing at the last checkpoint).
+
+Additional prerequisites specific to this release, beyond the AIDX owner step above:
+
+- **No production Admin account is known to exist.** The Experience Passport verification queue
+  (`/admin/verification`, `RequireAdmin`-gated) has no reviewer until one is deliberately promoted —
+  the same documented `UPDATE ... SET "Role" = 'Admin'` step used for every other admin-only feature
+  in this codebase. Do not create one as a side effect of deploying; it is a separate, explicit
+  operator action, taken only after confirming who the production admin should be.
+- These 5 migrations are additive only (new tables, no altered existing columns) — same
+  compatibility shape as `AddAidxFoundations` above, so the same "migrate first, then release the
+  API" ordering applies, and the old API continues to work against the migrated schema in the
+  window between the two.
+- Re-run the Resume storage verification above after this release if resume-adjacent code changes —
+  it did not change in this phase, so no new verification is required solely for Career
+  Intelligence, but confirm the running image's commit before assuming the earlier Supabase fix
+  (`be8da5b`) is included.
 
 ## Monitoring
 

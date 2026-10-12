@@ -158,6 +158,42 @@ public sealed class ExperienceAdminEndpointsTests(AuthApiFactory factory) : ICla
     }
 
     [Fact]
+    public async Task The_queue_is_bounded_by_page_size_instead_of_returning_every_matching_row()
+    {
+        // Platform-wide admin lists must never grow unbounded with the number of candidates —
+        // see AidxAdminEndpoints' own paging convention, which this endpoint now also follows.
+        var ct = TestContext.Current.CancellationToken;
+        for (var i = 0; i < 3; i++)
+        {
+            var applicant = await IssueApplicantWithProfileAsync(ct);
+            await CreateAndSubmitRecordAsync(applicant, ct);
+        }
+
+        var admin = await IssueAdminAsync(ct);
+        using var client = CreateClient();
+        using var queue = BuildRequest(HttpMethod.Get, "/api/v1/admin/experience-passport/queue?pageSize=2", admin);
+        var response = await client.SendAsync(queue, ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var items = (await response.Content.ReadFromJsonAsync<List<ExperienceQueueItemResponse>>(ct))!;
+        items.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task An_invalid_page_or_page_size_is_rejected()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var admin = await IssueAdminAsync(ct);
+        using var client = CreateClient();
+
+        using var badPage = BuildRequest(HttpMethod.Get, "/api/v1/admin/experience-passport/queue?page=0", admin);
+        (await client.SendAsync(badPage, ct)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        using var badPageSize = BuildRequest(HttpMethod.Get, "/api/v1/admin/experience-passport/queue?pageSize=500", admin);
+        (await client.SendAsync(badPageSize, ct)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task Begin_review_then_approve_moves_the_record_to_Verified_and_logs_the_actor()
     {
         var ct = TestContext.Current.CancellationToken;

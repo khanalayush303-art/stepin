@@ -43,8 +43,23 @@ public static class ExperienceAdminEndpoints
         return app;
     }
 
-    private static async Task<IResult> ListQueueAsync(string? status, IApplicationDbContext db, CancellationToken cancellationToken)
+    /// <summary>
+    /// Bounded like every other platform-wide admin list (see AidxEndpointHelpers) — unlike a
+    /// candidate's own record list, this query spans every candidate's submissions, so it must
+    /// never grow unbounded as the platform does. Defaults to the first page at the platform's
+    /// standard page size; the response shape is unchanged (still a plain array) so this is a
+    /// pure bug fix, not a contract change.
+    /// </summary>
+    private static async Task<IResult> ListQueueAsync(string? status, int? page, int? pageSize, IApplicationDbContext db, CancellationToken cancellationToken)
     {
+        var resolvedPage = page ?? 1;
+        var resolvedPageSize = pageSize ?? AidxEndpointHelpers.DefaultPageSize;
+        var errors = AidxEndpointHelpers.ValidatePaging(resolvedPage, resolvedPageSize);
+        if (errors.Count > 0)
+        {
+            return Results.ValidationProblem(errors);
+        }
+
         IReadOnlyList<ExperienceVerificationStatus> statuses;
         if (string.IsNullOrWhiteSpace(status))
         {
@@ -69,7 +84,8 @@ public static class ExperienceAdminEndpoints
             select new ExperienceQueueItemResponse(
                 r.Id, r.RecordType.ToString(), r.Title, r.Organization, u.FirstName + " " + u.LastName, r.Status.ToString(), r.SubmittedAt, r.CreatedAt);
 
-        return Results.Ok(await query.ToListAsync(cancellationToken));
+        var (items, _) = await AidxEndpointHelpers.PageAsync(query, resolvedPage, resolvedPageSize, cancellationToken);
+        return Results.Ok(items);
     }
 
     private static async Task<IResult> GetRecordAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken)

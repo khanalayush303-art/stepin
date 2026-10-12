@@ -3,28 +3,21 @@
 import * as React from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
-import { Bell, Bookmark, Building2, Download, FileText, GraduationCap, LayoutDashboard, Search, User } from "lucide-react";
+import { Building2, Download } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ApplicationStatusBadge } from "@/components/applications/application-status-badge";
-import { DashboardShell, type DashboardNavItem } from "@/components/dashboard/dashboard-shell";
+import { CANDIDATE_NAV } from "@/components/dashboard/candidate-nav";
+import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { ApiError, formError } from "@/lib/auth/client";
 import { downloadResume, getApplication } from "@/lib/applications/api";
 import type { Application } from "@/lib/applications/types";
 import { formatDate } from "@/lib/utils";
 
-const NAV: DashboardNavItem[] = [
-  { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
-  { href: "/dashboard/discover", label: "Discover roles", icon: Search },
-  { href: "/dashboard/applications", label: "Applications", icon: FileText, badge: "12" },
-  { href: "/dashboard/saved", label: "Saved roles", icon: Bookmark, badge: "8" },
-  { href: "/dashboard/interviews", label: "Interviews", icon: User, badge: "2" },
-  { href: "/dashboard/prepare", label: "Prepare", icon: GraduationCap },
-  { href: "/dashboard/notifications", label: "Notifications", icon: Bell, badge: "3" },
-];
+const NAV = CANDIDATE_NAV;
 
 function ApplicationDetailsView() {
   const params = useParams<{ id: string }>();

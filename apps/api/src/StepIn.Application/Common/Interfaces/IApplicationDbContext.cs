@@ -2,6 +2,7 @@ using StepIn.Domain.Aidx;
 using StepIn.Domain.Applications;
 using StepIn.Domain.Career;
 using StepIn.Domain.Companies;
+using StepIn.Domain.Interviews;
 using StepIn.Domain.Portfolio;
 using StepIn.Domain.Jobs;
 using StepIn.Domain.Profiles;
@@ -42,6 +43,10 @@ public interface IApplicationDbContext
     IQueryable<RoadmapItem> RoadmapItems { get; }
 
     IQueryable<PortfolioProject> PortfolioProjects { get; }
+
+    IQueryable<InterviewPracticeSession> InterviewPracticeSessions { get; }
+
+    IQueryable<InterviewPracticeQuestion> InterviewPracticeQuestions { get; }
 
     IQueryable<AidxResearchArea> AidxResearchAreas { get; }
 

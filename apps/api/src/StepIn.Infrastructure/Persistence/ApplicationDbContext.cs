@@ -5,6 +5,7 @@ using StepIn.Domain.Applications;
 using StepIn.Domain.Career;
 using StepIn.Domain.Common;
 using StepIn.Domain.Companies;
+using StepIn.Domain.Interviews;
 using StepIn.Domain.Portfolio;
 using StepIn.Domain.Jobs;
 using StepIn.Domain.Profiles;
@@ -46,6 +47,10 @@ public sealed class ApplicationDbContext(
     public DbSet<RoadmapItem> RoadmapItems => Set<RoadmapItem>();
 
     public DbSet<PortfolioProject> PortfolioProjects => Set<PortfolioProject>();
+
+    public DbSet<InterviewPracticeSession> InterviewPracticeSessions => Set<InterviewPracticeSession>();
+
+    public DbSet<InterviewPracticeQuestion> InterviewPracticeQuestions => Set<InterviewPracticeQuestion>();
 
     public DbSet<AidxResearchArea> AidxResearchAreas => Set<AidxResearchArea>();
 
@@ -110,6 +115,10 @@ public sealed class ApplicationDbContext(
     IQueryable<RoadmapItem> IApplicationDbContext.RoadmapItems => RoadmapItems;
 
     IQueryable<PortfolioProject> IApplicationDbContext.PortfolioProjects => PortfolioProjects;
+
+    IQueryable<InterviewPracticeSession> IApplicationDbContext.InterviewPracticeSessions => InterviewPracticeSessions;
+
+    IQueryable<InterviewPracticeQuestion> IApplicationDbContext.InterviewPracticeQuestions => InterviewPracticeQuestions;
 
     void IApplicationDbContext.Add<TEntity>(TEntity entity) => Set<TEntity>().Add(entity);
 

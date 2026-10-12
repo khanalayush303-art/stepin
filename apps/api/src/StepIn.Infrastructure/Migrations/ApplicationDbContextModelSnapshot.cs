@@ -688,6 +688,92 @@ namespace StepIn.Infrastructure.Migrations
                     b.ToTable("Companies", "stepin");
                 });
 
+            modelBuilder.Entity("StepIn.Domain.Interviews.InterviewPracticeQuestion", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AnswerText")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<DateTimeOffset?>("AnsweredAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<int>("OrderIndex")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("QuestionText")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SessionId");
+
+                    b.HasIndex("SessionId", "OrderIndex")
+                        .IsUnique();
+
+                    b.ToTable("InterviewPracticeQuestions", "stepin");
+                });
+
+            modelBuilder.Entity("StepIn.Domain.Interviews.InterviewPracticeSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CandidateProfileId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("TargetRole")
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CandidateProfileId");
+
+                    b.HasIndex("CandidateProfileId", "CreatedAt");
+
+                    b.ToTable("InterviewPracticeSessions", "stepin");
+                });
+
             modelBuilder.Entity("StepIn.Domain.Jobs.Job", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1280,6 +1366,15 @@ namespace StepIn.Infrastructure.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("StepIn.Domain.Interviews.InterviewPracticeQuestion", b =>
+                {
+                    b.HasOne("StepIn.Domain.Interviews.InterviewPracticeSession", null)
+                        .WithMany("Questions")
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("StepIn.Domain.Jobs.Job", b =>
                 {
                     b.HasOne("StepIn.Domain.Aidx.AidxProject", "AidxProject")
@@ -1404,6 +1499,11 @@ namespace StepIn.Infrastructure.Migrations
             modelBuilder.Entity("StepIn.Domain.Career.CareerGoal", b =>
                 {
                     b.Navigation("RoadmapItems");
+                });
+
+            modelBuilder.Entity("StepIn.Domain.Interviews.InterviewPracticeSession", b =>
+                {
+                    b.Navigation("Questions");
                 });
 
             modelBuilder.Entity("StepIn.Domain.Profiles.CandidateProfile", b =>

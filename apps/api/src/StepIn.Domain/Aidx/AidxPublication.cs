@@ -23,6 +23,9 @@ public sealed class AidxPublication : Entity
 
     public bool Published { get; set; }
 
+    /// <summary>Editing ownership — distinct from <see cref="Authors"/> attribution.</summary>
+    public Guid? CreatedByMembershipId { get; set; }
+
     public List<AidxPublicationAuthor> Authors { get; set; } = [];
 
     public List<AidxPublicationResearchArea> ResearchAreas { get; set; } = [];

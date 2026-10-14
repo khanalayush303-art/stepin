@@ -107,6 +107,7 @@ app.MapSavedJobEndpoints();
 app.MapAidxPublicEndpoints();
 app.MapAidxAdminEndpoints();
 app.MapAidxOpportunityAdminEndpoints();
+app.MapAidxMembershipEndpoints();
 
 app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
 
@@ -138,6 +139,20 @@ if (args.Contains(MigrateDatabaseCommand.Name, StringComparer.OrdinalIgnoreCase)
     var expectedFinalMigrationId = commandIndex + 1 < args.Length ? args[commandIndex + 1] : null;
 
     var exitCode = await MigrateDatabaseCommand.RunAsync(app.Services, Console.Out, expectedFinalMigrationId, CancellationToken.None);
+    await Log.CloseAndFlushAsync();
+    return exitCode;
+}
+
+if (args.Contains(AidxBootstrapManagerCommand.Name, StringComparer.OrdinalIgnoreCase))
+{
+    string? ReadFlag(string flag)
+    {
+        var index = Array.FindIndex(args, a => string.Equals(a, flag, StringComparison.OrdinalIgnoreCase));
+        return index >= 0 && index + 1 < args.Length ? args[index + 1] : null;
+    }
+
+    var exitCode = await AidxBootstrapManagerCommand.RunAsync(
+        app.Services, Console.Out, ReadFlag("--user-id"), ReadFlag("--clerk-user-id"), CancellationToken.None);
     await Log.CloseAndFlushAsync();
     return exitCode;
 }

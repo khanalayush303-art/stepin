@@ -21,5 +21,11 @@ public sealed class AidxEventConfiguration : IEntityTypeConfiguration<AidxEvent>
 
         builder.HasIndex(e => e.Slug).IsUnique();
         builder.HasIndex(e => new { e.Status, e.StartsAt });
+        builder.HasIndex(e => e.CreatedByMembershipId);
+
+        builder.HasOne<AidxMembership>()
+            .WithMany()
+            .HasForeignKey(e => e.CreatedByMembershipId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

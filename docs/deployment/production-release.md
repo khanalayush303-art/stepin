@@ -391,6 +391,19 @@ Additional prerequisites specific to this release, beyond the AIDX owner step ab
   Intelligence, but confirm the running image's commit before assuming the earlier Supabase fix
   (`be8da5b`) is included.
 
+**Update, 2026-10-14 (AIDX Lab publishing — Milestone 1):** a 5th migration,
+`20261014145029_AddAidxMembership`, is now pending on top of the 4 above —
+purely additive (new `AidxMemberships`/`AidxMembershipAuditEntries` tables,
+nullable `CreatedByMembershipId` columns on existing AIDX content tables, no
+altered or dropped columns), so it carries the same "migrate first" ordering
+and old-API compatibility as the 4 above. Apply all 5 in one invocation by
+naming `20261014145029_AddAidxMembership` as the `migrate-database` target
+instead of `20261012131143_AddExperiencePassport`. See
+[aidx-permissions.md](../architecture/aidx-permissions.md) for the bootstrap
+step (`aidx-bootstrap-manager`) required before any AIDX lab membership can
+be granted — it is a separate, explicit, one-time operator action, not run
+automatically by this or any migration.
+
 ## Monitoring
 
 Use the platform's own tooling (`fly logs -a stepin-api`, Vercel logs). Watch for 5xx responses, a spike

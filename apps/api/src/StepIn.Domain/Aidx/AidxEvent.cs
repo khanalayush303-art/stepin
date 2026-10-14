@@ -24,4 +24,7 @@ public sealed class AidxEvent : Entity
     public string? ImageKey { get; set; }
 
     public AidxContentStatus Status { get; set; } = AidxContentStatus.Draft;
+
+    /// <summary>Editing ownership — distinct from authorship (events have no author field).</summary>
+    public Guid? CreatedByMembershipId { get; set; }
 }

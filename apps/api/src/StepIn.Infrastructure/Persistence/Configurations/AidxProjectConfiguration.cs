@@ -19,6 +19,12 @@ public sealed class AidxProjectConfiguration : IEntityTypeConfiguration<AidxProj
 
         builder.HasIndex(p => p.Slug).IsUnique();
         builder.HasIndex(p => new { p.Status, p.PublishedAt });
+        builder.HasIndex(p => p.CreatedByMembershipId);
+
+        builder.HasOne<AidxMembership>()
+            .WithMany()
+            .HasForeignKey(p => p.CreatedByMembershipId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         builder.HasMany(p => p.ResearchAreas)
             .WithOne()

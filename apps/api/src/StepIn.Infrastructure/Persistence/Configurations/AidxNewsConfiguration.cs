@@ -19,11 +19,17 @@ public sealed class AidxNewsConfiguration : IEntityTypeConfiguration<AidxNews>
 
         builder.HasIndex(n => n.Slug).IsUnique();
         builder.HasIndex(n => new { n.Status, n.PublishedAt });
+        builder.HasIndex(n => n.CreatedByMembershipId);
 
         // Keep the news item if its author's researcher profile is removed.
         builder.HasOne<AidxResearcher>()
             .WithMany()
             .HasForeignKey(n => n.AuthorResearcherId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne<AidxMembership>()
+            .WithMany()
+            .HasForeignKey(n => n.CreatedByMembershipId)
             .OnDelete(DeleteBehavior.SetNull);
     }
 }

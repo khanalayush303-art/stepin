@@ -32,6 +32,9 @@ namespace StepIn.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamptz");
 
+                    b.Property<Guid?>("CreatedByMembershipId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Description")
                         .IsRequired()
                         .HasMaxLength(10000)
@@ -79,12 +82,106 @@ namespace StepIn.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CreatedByMembershipId");
+
                     b.HasIndex("Slug")
                         .IsUnique();
 
                     b.HasIndex("Status", "StartsAt");
 
                     b.ToTable("AidxEvents", "aidx");
+                });
+
+            modelBuilder.Entity("StepIn.Domain.Aidx.AidxMembership", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<Guid>("GrantedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid?>("ScopedResearchAreaId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GrantedByUserId");
+
+                    b.HasIndex("ScopedResearchAreaId");
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("AidxMemberships", "aidx");
+                });
+
+            modelBuilder.Entity("StepIn.Domain.Aidx.AidxMembershipAuditEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<Guid>("MembershipId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("NewRole")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid?>("NewScopeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("PerformedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("PreviousRole")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<Guid?>("PreviousScopeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MembershipId");
+
+                    b.HasIndex("PerformedByUserId");
+
+                    b.ToTable("AidxMembershipAuditEntries", "aidx");
                 });
 
             modelBuilder.Entity("StepIn.Domain.Aidx.AidxNews", b =>
@@ -103,6 +200,9 @@ namespace StepIn.Infrastructure.Migrations
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamptz");
+
+                    b.Property<Guid?>("CreatedByMembershipId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("ImageKey")
                         .HasMaxLength(500)
@@ -138,6 +238,8 @@ namespace StepIn.Infrastructure.Migrations
 
                     b.HasIndex("AuthorResearcherId");
 
+                    b.HasIndex("CreatedByMembershipId");
+
                     b.HasIndex("Slug")
                         .IsUnique();
 
@@ -154,6 +256,9 @@ namespace StepIn.Infrastructure.Migrations
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamptz");
+
+                    b.Property<Guid?>("CreatedByMembershipId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Description")
                         .IsRequired()
@@ -200,6 +305,8 @@ namespace StepIn.Infrastructure.Migrations
                         .HasColumnType("timestamptz");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CreatedByMembershipId");
 
                     b.HasIndex("Slug")
                         .IsUnique();
@@ -284,6 +391,9 @@ namespace StepIn.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamptz");
 
+                    b.Property<Guid?>("CreatedByMembershipId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Doi")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
@@ -320,6 +430,8 @@ namespace StepIn.Infrastructure.Migrations
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CreatedByMembershipId");
 
                     b.HasIndex("Doi")
                         .IsUnique()
@@ -1343,11 +1455,67 @@ namespace StepIn.Infrastructure.Migrations
                     b.ToTable("Users", "stepin");
                 });
 
+            modelBuilder.Entity("StepIn.Domain.Aidx.AidxEvent", b =>
+                {
+                    b.HasOne("StepIn.Domain.Aidx.AidxMembership", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByMembershipId")
+                        .OnDelete(DeleteBehavior.SetNull);
+                });
+
+            modelBuilder.Entity("StepIn.Domain.Aidx.AidxMembership", b =>
+                {
+                    b.HasOne("StepIn.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("GrantedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StepIn.Domain.Aidx.AidxResearchArea", null)
+                        .WithMany()
+                        .HasForeignKey("ScopedResearchAreaId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("StepIn.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("StepIn.Domain.Aidx.AidxMembershipAuditEntry", b =>
+                {
+                    b.HasOne("StepIn.Domain.Aidx.AidxMembership", null)
+                        .WithMany()
+                        .HasForeignKey("MembershipId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("StepIn.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("PerformedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("StepIn.Domain.Aidx.AidxNews", b =>
                 {
                     b.HasOne("StepIn.Domain.Aidx.AidxResearcher", null)
                         .WithMany()
                         .HasForeignKey("AuthorResearcherId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("StepIn.Domain.Aidx.AidxMembership", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByMembershipId")
+                        .OnDelete(DeleteBehavior.SetNull);
+                });
+
+            modelBuilder.Entity("StepIn.Domain.Aidx.AidxProject", b =>
+                {
+                    b.HasOne("StepIn.Domain.Aidx.AidxMembership", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByMembershipId")
                         .OnDelete(DeleteBehavior.SetNull);
                 });
 
@@ -1392,6 +1560,14 @@ namespace StepIn.Infrastructure.Migrations
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("StepIn.Domain.Aidx.AidxPublication", b =>
+                {
+                    b.HasOne("StepIn.Domain.Aidx.AidxMembership", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByMembershipId")
+                        .OnDelete(DeleteBehavior.SetNull);
                 });
 
             modelBuilder.Entity("StepIn.Domain.Aidx.AidxPublicationAuthor", b =>

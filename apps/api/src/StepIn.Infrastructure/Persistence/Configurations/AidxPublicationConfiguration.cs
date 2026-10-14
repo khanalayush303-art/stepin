@@ -20,5 +20,11 @@ public sealed class AidxPublicationConfiguration : IEntityTypeConfiguration<Aidx
 
         builder.HasIndex(p => new { p.Published, p.Year });
         builder.HasIndex(p => p.Doi).IsUnique().HasFilter("\"Doi\" IS NOT NULL");
+        builder.HasIndex(p => p.CreatedByMembershipId);
+
+        builder.HasOne<AidxMembership>()
+            .WithMany()
+            .HasForeignKey(p => p.CreatedByMembershipId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

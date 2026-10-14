@@ -19,4 +19,7 @@ public sealed class AidxNews : Entity
     public AidxContentStatus Status { get; set; } = AidxContentStatus.Draft;
 
     public DateTimeOffset? PublishedAt { get; set; }
+
+    /// <summary>Editing ownership — distinct from <see cref="AuthorResearcherId"/> attribution.</summary>
+    public Guid? CreatedByMembershipId { get; set; }
 }

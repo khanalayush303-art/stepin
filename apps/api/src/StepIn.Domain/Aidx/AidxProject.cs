@@ -24,6 +24,13 @@ public sealed class AidxProject : Entity
 
     public DateTimeOffset? PublishedAt { get; set; }
 
+    /// <summary>
+    /// Editing ownership — distinct from authorship. Null for pre-existing
+    /// admin-created rows; never implicitly open to any Contributor edit
+    /// (see AidxPermissions.CanEdit and the "claim-ownership" action).
+    /// </summary>
+    public Guid? CreatedByMembershipId { get; set; }
+
     public List<AidxProjectResearchArea> ResearchAreas { get; set; } = [];
 
     public List<AidxProjectTechnology> Technologies { get; set; } = [];

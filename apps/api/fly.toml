@@ -25,11 +25,13 @@ primary_region = 'syd'
   memory = '512mb'
   processes = ['app']
 
-# Durable resume storage. Without this mount, resume files live on the machine's root filesystem and
-# are lost on redeploy. Before deploying this change:
-#   1. fly volumes create stepin_resumes --region syd --size 1 -a stepin-api
-#   2. fly secrets set Storage__ResumeRootPath=/app/data/resumes -a stepin-api
-# The volume must exist first, or the deploy fails. Keep one machine: a volume attaches to one machine only.
-[[mounts]]
-  source = 'stepin_resumes'
-  destination = '/app/data'
+# No [[mounts]] block: resume storage is Supabase (Storage__Provider=Supabase), not local disk —
+# confirmed via DependencyInjection.AddResumeStorage's own branching (LocalDiskResumeStorage, the
+# only code in the repo that ever reads Storage:ResumeRootPath or touches this path, is registered
+# only when Storage:Provider != "Supabase") and the "Resume storage provider: {Provider}" line
+# Program.cs now logs at startup. A volume attaches to exactly one machine, so this block required
+# one stepin_resumes volume per machine in this process group — with two machines and only one
+# volume ever created, every deploy failed with "needs volumes... to fulfill mounts" the moment
+# Fly re-validated it. The stepin_resumes volume itself is untouched (not deleted) in case local
+# disk is ever reactivated later; re-add this block (and provision one volume per machine) first
+# if that ever happens.

@@ -44,6 +44,14 @@ builder.Services.AddResponseCompression();
 
 var app = builder.Build();
 
+// Logs only the normalized provider name actually selected by AddResumeStorage's own
+// branching logic — never the raw config value, and never a URL, key, or bucket name. This is
+// the one place that answers "which storage path is actually active?" from the logs alone,
+// without printing anything secret.
+Log.Information(
+    "Resume storage provider: {Provider}",
+    string.Equals(app.Configuration["Storage:Provider"], "Supabase", StringComparison.OrdinalIgnoreCase) ? "Supabase" : "Local");
+
 // -------------------------------------------------------------- pipeline ---
 app.UseExceptionHandler();
 app.UseStatusCodePages();

@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import { ArrowRight, BookUser, Compass, FolderGit2, Mic } from "lucide-react";
 import { Card } from "@/components/ui/card";

@@ -1,3 +1,5 @@
+"use client";
+
 import { Bell } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { CANDIDATE_NAV } from "@/components/dashboard/candidate-nav";

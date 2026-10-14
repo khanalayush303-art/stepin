@@ -1,3 +1,5 @@
+"use client";
+
 import { TrendingUp } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";

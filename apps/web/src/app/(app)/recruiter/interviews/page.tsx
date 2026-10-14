@@ -1,3 +1,5 @@
+"use client";
+
 import { Building2, Clock, FileText, LayoutDashboard, Users } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
 import { DashboardShell, type DashboardNavItem } from "@/components/dashboard/dashboard-shell";

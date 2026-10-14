@@ -8,6 +8,17 @@ import { test, expect } from "@playwright/test";
 
 const PROTECTED_ROUTES = ["/dashboard", "/recruiter", "/admin", "/account-setup"];
 
+// Milestone 3 (AIDX lab workspace): /aidx itself is public, these two are the first
+// authenticated AIDX routes, gated by requireAidxWorkspaceAccess/requireAidxManageAccess.
+for (const path of ["/aidx/workspace", "/aidx/manage"]) {
+  test(`${path} redirects an unauthenticated visitor to sign-in, not the 404 page`, async ({ page }) => {
+    const response = await page.goto(path);
+    expect(response?.status()).toBeLessThan(400);
+    await expect(page).toHaveURL(new RegExp(`/sign-in\\?returnTo=${encodeURIComponent(path)}$`));
+    await expect(page.getByText("We could not find that page")).toHaveCount(0);
+  });
+}
+
 for (const path of PROTECTED_ROUTES) {
   test(`${path} redirects an unauthenticated visitor to sign-in`, async ({ page }) => {
     await page.goto(path);

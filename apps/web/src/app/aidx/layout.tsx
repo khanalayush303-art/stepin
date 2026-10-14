@@ -3,6 +3,7 @@ import Link from "next/link";
 import { SiteFooter } from "@/components/layout/site-footer";
 import { Logo } from "@/components/layout/logo";
 import { AidxNavLinks } from "@/components/aidx/aidx-nav-links";
+import { AidxAccountNav } from "@/components/aidx/aidx-account-nav";
 
 export const metadata: Metadata = {
   title: {
@@ -52,7 +53,10 @@ export default function AidxLayout({ children }: { children: React.ReactNode }) 
                 Part of StepIn
               </Link>
             </div>
-            <Logo />
+            <div className="flex items-center gap-4">
+              <AidxAccountNav />
+              <Logo />
+            </div>
           </div>
 
           <nav aria-label="AIDX Lab">

@@ -28,24 +28,44 @@ public static class ClerkAuthenticationSetup
                 "e.g. https://your-app.clerk.accounts.dev (Clerk Dashboard → Configure → API Keys).");
         }
 
-        var authorizedParties = configuration.GetSection("Clerk:AuthorizedParties").Get<string[]>() ?? [];
+        var authorizedParties = (configuration.GetSection("Clerk:AuthorizedParties").Get<string[]>() ?? [])
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .ToArray();
+
+        if (authorizedParties.Length == 0)
+        {
+            // Fail startup, the same way a missing Clerk:Authority already does — not fail
+            // *open* at request time. Without this, an unset/emptied AuthorizedParties list used
+            // to make every token pass the azp check below regardless of its value, because
+            // `authorizedParties.Length > 0 && ...` is false whenever the list is empty. A token
+            // is never trusted on the strength of signature/issuer/lifetime alone; azp must
+            // always be checked against a real, non-empty allow-list.
+            throw new InvalidOperationException(
+                "Clerk:AuthorizedParties is not configured. Set at least one trusted frontend origin " +
+                "(e.g. https://your-app.vercel.app) via Clerk__AuthorizedParties__0 in the environment, " +
+                "or the equivalent appsettings key. Tokens are never trusted without this.");
+        }
 
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>
             {
                 options.Authority = authority;
+
+                // Clerk's default session token carries no standard `aud` claim at all — this is
+                // the actual shape of a real Clerk token, not a shortcut taken to get auth
+                // working. Enabling audience validation against a token format that never sets
+                // `aud` would reject every request, not add security; `azp` (authorized party) is
+                // Clerk's own documented substitute for exactly this purpose, enforced below
+                // against a now-guaranteed-non-empty allow-list.
                 options.TokenValidationParameters.ValidateAudience = false;
 
                 options.Events = new JwtBearerEvents
                 {
                     OnTokenValidated = context =>
                     {
-                        // Clerk tokens carry no standard `aud`; `azp` (authorized party) is
-                        // Clerk's documented substitute — reject tokens issued for a frontend
-                        // origin this API wasn't configured to trust.
                         var azp = context.Principal?.FindFirstValue("azp");
 
-                        if (authorizedParties.Length > 0 && (azp is null || !authorizedParties.Contains(azp)))
+                        if (azp is null || !authorizedParties.Contains(azp))
                         {
                             context.Fail("Token was not issued for an authorized party.");
                         }

@@ -90,6 +90,20 @@ public sealed class AuthEndpointsTests(AuthApiFactory factory) : IClassFixture<A
     }
 
     [Fact]
+    public async Task Me_with_a_token_carrying_no_azp_at_all_is_rejected()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var token = AuthApiFactory.IssueToken($"user_{Guid.NewGuid():N}", $"{Guid.NewGuid()}@example.com", azp: null);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/auth/me");
+        Authorize(request, token);
+
+        var response = await client.SendAsync(request, ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
     public async Task Me_with_a_valid_token_syncs_and_returns_the_application_user()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -265,6 +279,199 @@ public sealed class AuthEndpointsTests(AuthApiFactory factory) : IClassFixture<A
         var meResponse = await client.SendAsync(meRequest, ct);
         var meBody = await meResponse.Content.ReadFromJsonAsync<CurrentUserResponse>(ct);
         meBody!.Role.Should().Be(role);
+    }
+
+    [Fact]
+    public async Task Repeating_account_setup_with_the_same_role_is_idempotent()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var clerkUserId = $"user_{Guid.NewGuid():N}";
+        var email = $"{Guid.NewGuid()}@example.com";
+        var token = AuthApiFactory.IssueToken(clerkUserId, email);
+
+        using var first = BuildSetupRequest(token, "Applicant");
+        (await client.SendAsync(first, ct)).EnsureSuccessStatusCode();
+
+        using var second = BuildSetupRequest(AuthApiFactory.IssueToken(clerkUserId, email), "Applicant");
+        var secondResponse = await client.SendAsync(second, ct);
+
+        secondResponse.StatusCode.Should().Be(HttpStatusCode.OK, "repeating the same role is a no-op success, not an error");
+        var body = await secondResponse.Content.ReadFromJsonAsync<Dictionary<string, string>>(ct);
+        body!["redirectTo"].Should().Be("/dashboard");
+    }
+
+    [Fact]
+    public async Task Attempting_to_change_an_existing_role_through_account_setup_is_a_conflict()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var clerkUserId = $"user_{Guid.NewGuid():N}";
+        var email = $"{Guid.NewGuid()}@example.com";
+        var token = AuthApiFactory.IssueToken(clerkUserId, email);
+
+        using var first = BuildSetupRequest(token, "Applicant");
+        (await client.SendAsync(first, ct)).EnsureSuccessStatusCode();
+
+        using var second = BuildSetupRequest(AuthApiFactory.IssueToken(clerkUserId, email), "Recruiter");
+        var response = await client.SendAsync(second, ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        // Prove the role genuinely never changed, not just that the response looked right.
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var user = await db.Users.SingleAsync(u => u.ClerkUserId == clerkUserId, ct);
+        user.Role.Should().Be(UserRole.Applicant);
+    }
+
+    [Fact]
+    public async Task Account_setup_can_never_demote_an_existing_admin()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var clerkUserId = $"user_{Guid.NewGuid():N}";
+        var email = $"{Guid.NewGuid()}@example.com";
+
+        // Admin is never client-settable — promote directly, mirroring the documented psql step.
+        using var setup = BuildSetupRequest(AuthApiFactory.IssueToken(clerkUserId, email), "Applicant");
+        (await client.SendAsync(setup, ct)).EnsureSuccessStatusCode();
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await db.Users.Where(u => u.ClerkUserId == clerkUserId).ExecuteUpdateAsync(s => s.SetProperty(u => u.Role, UserRole.Admin), ct);
+        }
+
+        using var attempt = BuildSetupRequest(AuthApiFactory.IssueToken(clerkUserId, email), "Recruiter");
+        var response = await client.SendAsync(attempt, ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        using var verifyScope = _factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        (await verifyDb.Users.SingleAsync(u => u.ClerkUserId == clerkUserId, ct)).Role.Should().Be(UserRole.Admin);
+    }
+
+    [Fact]
+    public async Task Concurrent_conflicting_account_setup_requests_leave_exactly_one_role_and_exactly_one_success()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var clerkUserId = $"user_{Guid.NewGuid():N}";
+        var email = $"{Guid.NewGuid()}@example.com";
+
+        using var client = CreateClient();
+        using var applicantRequest = BuildSetupRequest(AuthApiFactory.IssueToken(clerkUserId, email), "Applicant");
+        using var recruiterRequest = BuildSetupRequest(AuthApiFactory.IssueToken(clerkUserId, email), "Recruiter");
+
+        var responses = await Task.WhenAll(
+            client.SendAsync(applicantRequest, ct),
+            client.SendAsync(recruiterRequest, ct));
+
+        responses.Count(r => r.StatusCode == HttpStatusCode.OK).Should().Be(1, "exactly one concurrent request may win");
+        responses.Count(r => r.StatusCode == HttpStatusCode.Conflict).Should().Be(1, "the loser must see a conflict, never silently overwrite");
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var finalRole = (await db.Users.SingleAsync(u => u.ClerkUserId == clerkUserId, ct)).Role;
+        finalRole.Should().NotBeNull();
+        // Whichever request's role actually landed, it must be internally consistent: the OK
+        // response's redirect must match the role that's actually stored.
+        var winningBody = await responses.Single(r => r.StatusCode == HttpStatusCode.OK).Content.ReadFromJsonAsync<Dictionary<string, string>>(ct);
+        var expectedRedirect = finalRole == UserRole.Recruiter ? "/recruiter" : "/dashboard";
+        winningBody!["redirectTo"].Should().Be(expectedRedirect);
+    }
+
+    // ------------------------------------------------------- disabled accounts ---
+
+    [Fact]
+    public async Task A_suspended_account_gets_403_from_me_instead_of_its_stale_role()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var clerkUserId = $"user_{Guid.NewGuid():N}";
+        var email = $"{Guid.NewGuid()}@example.com";
+
+        using var setup = BuildSetupRequest(AuthApiFactory.IssueToken(clerkUserId, email), "Applicant");
+        (await client.SendAsync(setup, ct)).EnsureSuccessStatusCode();
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await db.Users.Where(u => u.ClerkUserId == clerkUserId).ExecuteUpdateAsync(s => s.SetProperty(u => u.AccountStatus, AccountStatus.Suspended), ct);
+        }
+
+        using var meRequest = new HttpRequestMessage(HttpMethod.Get, "/api/v1/auth/me");
+        Authorize(meRequest, AuthApiFactory.IssueToken(clerkUserId, email));
+
+        var response = await client.SendAsync(meRequest, ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task A_suspended_account_cannot_complete_account_setup()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var clerkUserId = $"user_{Guid.NewGuid():N}";
+        var email = $"{Guid.NewGuid()}@example.com";
+
+        // Authenticate once (no role yet) so the user row exists, then disable it.
+        using var firstMe = new HttpRequestMessage(HttpMethod.Get, "/api/v1/auth/me");
+        Authorize(firstMe, AuthApiFactory.IssueToken(clerkUserId, email));
+        (await client.SendAsync(firstMe, ct)).EnsureSuccessStatusCode();
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await db.Users.Where(u => u.ClerkUserId == clerkUserId).ExecuteUpdateAsync(s => s.SetProperty(u => u.AccountStatus, AccountStatus.Suspended), ct);
+        }
+
+        using var setup = BuildSetupRequest(AuthApiFactory.IssueToken(clerkUserId, email), "Applicant");
+        var response = await client.SendAsync(setup, ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        using var verifyScope = _factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        (await verifyDb.Users.SingleAsync(u => u.ClerkUserId == clerkUserId, ct)).Role.Should().BeNull("a disabled account must not be able to acquire a role");
+    }
+
+    [Fact]
+    public async Task A_suspended_accounts_existing_role_never_satisfies_a_role_policy()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = CreateClient();
+        var clerkUserId = $"user_{Guid.NewGuid():N}";
+        var email = $"{Guid.NewGuid()}@example.com";
+
+        using var setup = BuildSetupRequest(AuthApiFactory.IssueToken(clerkUserId, email), "Applicant");
+        (await client.SendAsync(setup, ct)).EnsureSuccessStatusCode();
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await db.Users.Where(u => u.ClerkUserId == clerkUserId).ExecuteUpdateAsync(s => s.SetProperty(u => u.AccountStatus, AccountStatus.Suspended), ct);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/test/applicant-only");
+        Authorize(request, AuthApiFactory.IssueToken(clerkUserId, email));
+
+        var response = await client.SendAsync(request, ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden, "the stored Role is still Applicant, but a Suspended account must never pass a role policy");
+    }
+
+    private static HttpRequestMessage BuildSetupRequest(string token, string role)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/account-setup")
+        {
+            Content = JsonContent.Create(new AccountSetupRequest(role)),
+        };
+        Authorize(request, token);
+        UseFetchHeader(request);
+        return request;
     }
 
     [Fact]

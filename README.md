@@ -280,7 +280,25 @@ Next.js  ──same-origin /api rewrite──▶  ASP.NET Core  ──▶  Postg
   origin wherever the API is deployed.** The API checks a token's `azp` claim
   against this allow-list and rejects anything else with 401 — a token from
   `https://your-app.vercel.app` is correctly refused if the API still only
-  trusts `http://localhost:3000`.
+  trusts `http://localhost:3000`. **The API refuses to start at all if this
+  list is empty or unset** (same as a missing `Clerk:Authority`) — an
+  emptied/misconfigured allow-list used to silently accept a token with *any*
+  `azp`, including none at all; it now fails closed instead.
+- **Account setup is one-time and race-safe, enforced server-side.** A fresh
+  account may pick `Applicant` or `Recruiter` exactly once; repeating the same
+  choice is a no-op success, and attempting to change an existing role —
+  including an `Admin`'s — returns `409 Conflict` rather than silently
+  overwriting it. Two concurrent first-time requests for the same brand-new
+  account can't both win: the loser gets the same `409`, never a second,
+  conflicting write.
+- **A `Suspended` account (`AccountStatus`) never passes a role policy**,
+  regardless of what role is stored for it — enforced once in
+  `ClerkUserSyncClaimsTransformation` (the role claim is simply never added),
+  so every `RequireApplicant`/`RequireRecruiter`/`RequireAdmin`-gated endpoint
+  rejects it automatically. `GET /api/v1/auth/me` returns `403` for a
+  disabled account rather than 200 with its own stale role, so the frontend
+  can tell "disabled" apart from "no role yet" from the status code alone —
+  see `lib/auth/server.ts`'s `CurrentAppUserResult` type.
 
 ### Local setup
 

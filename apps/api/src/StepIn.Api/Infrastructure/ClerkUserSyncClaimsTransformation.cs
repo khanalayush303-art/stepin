@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.EntityFrameworkCore;
 using StepIn.Domain.Aidx;
+using StepIn.Domain.Common;
 using StepIn.Domain.Users;
 using StepIn.Infrastructure.Persistence;
 
@@ -48,7 +49,15 @@ public sealed class ClerkUserSyncClaimsTransformation(ApplicationDbContext db) :
         var identity = (ClaimsIdentity)principal.Identity;
         identity.AddClaim(new Claim(AppUserIdClaimType, user.Id.ToString()));
 
-        if (user.Role is not null)
+        // A Suspended account never gets a role claim, regardless of what Role is stored — this
+        // is the one place that matters, rather than a check repeated in every endpoint: every
+        // RequireApplicant/RequireRecruiter/RequireAdmin policy is a role check, so withholding
+        // the claim here makes all of them reject a disabled account with 403, automatically and
+        // consistently, with no per-endpoint change needed. A disabled account can still
+        // authenticate (the token itself is valid) — it just never satisfies a role policy, and
+        // AuthEndpoints.GetCurrentUserAsync separately returns 403 for /me so the frontend can
+        // tell "disabled" apart from "no role yet" instead of silently showing a stale role.
+        if (user.Role is not null && user.AccountStatus == AccountStatus.Active)
         {
             identity.AddClaim(new Claim(ClaimTypes.Role, user.Role.Value.ToString()));
         }

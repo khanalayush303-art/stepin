@@ -65,10 +65,18 @@ for (const path of [
   "/dashboard/interview-practice/123",
   "/dashboard/experience-passport",
   "/dashboard/experience-passport/123",
+  "/dashboard/prepare",
+  "/dashboard/notifications",
 ]) {
-  test(`${path} redirects an unauthenticated visitor to sign-in`, async ({ page }) => {
-    await page.goto(path);
+  test(`${path} redirects an unauthenticated visitor to sign-in, not the 404 page`, async ({ page }) => {
+    const response = await page.goto(path);
+    // A route that doesn't exist would either 404 outright or land on Next's global
+    // not-found boundary after any redirect; a real, Applicant-protected route instead
+    // redirects (307) straight to sign-in with the right returnTo — proving the route
+    // itself resolves, not just that *something* eventually rendered.
+    expect(response?.status()).toBeLessThan(400);
     await expect(page).toHaveURL(/\/sign-in\?returnTo=%2Fdashboard$/);
+    await expect(page.getByText("We could not find that page")).toHaveCount(0);
   });
 }
 

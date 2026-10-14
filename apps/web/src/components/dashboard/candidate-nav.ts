@@ -19,5 +19,5 @@ export const CANDIDATE_NAV: DashboardNavItem[] = [
   { href: "/dashboard/interview-practice", label: "Interview practice", icon: Mic },
   { href: "/dashboard/experience-passport", label: "Experience Passport", icon: BookUser },
   { href: "/dashboard/prepare", label: "Prepare", icon: GraduationCap },
-  { href: "/dashboard/notifications", label: "Notifications", icon: Bell, badge: "3" },
+  { href: "/dashboard/notifications", label: "Notifications", icon: Bell, comingSoon: true },
 ];

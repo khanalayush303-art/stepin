@@ -14,7 +14,14 @@ export interface DashboardNavItem {
   href: string;
   label: string;
   icon: LucideIcon;
+  /** A real, current count — never a placeholder. */
   badge?: string;
+  /**
+   * The destination exists and is honest about its own state (e.g. "not available yet"), but
+   * the feature itself isn't built — this renders a muted "Soon" badge instead of pretending
+   * the link leads somewhere fully working, without removing navigability to that honest page.
+   */
+  comingSoon?: boolean;
 }
 
 export function DashboardShell({
@@ -70,7 +77,11 @@ export function DashboardShell({
                         aria-hidden="true"
                       />
                       <span className="flex-1 whitespace-nowrap">{item.label}</span>
-                      {item.badge ? (
+                      {item.comingSoon ? (
+                        <span className="rounded-full bg-muted px-1.5 py-0.5 text-caption text-muted-foreground">
+                          Soon
+                        </span>
+                      ) : item.badge ? (
                         <span className="rounded-full bg-muted px-1.5 py-0.5 text-caption text-foreground-secondary">
                           {item.badge}
                         </span>

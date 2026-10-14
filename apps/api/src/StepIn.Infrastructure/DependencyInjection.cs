@@ -54,6 +54,9 @@ public static class DependencyInjection
         // Resolves the AIDX system owner. Read-only for requests: it never creates records.
         services.AddScoped<AidxSystemOwnershipService>();
 
+        // The one path that mutates AIDX editorial-workflow content — see its own doc comment.
+        services.AddScoped<Aidx.AidxContentEditingService>();
+
         services.AddHealthChecks()
             .AddDbContextCheck<ApplicationDbContext>(
                 name: "postgres",

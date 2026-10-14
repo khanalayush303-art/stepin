@@ -2,7 +2,7 @@ using StepIn.Domain.Common;
 
 namespace StepIn.Domain.Aidx;
 
-public sealed class AidxNews : Entity
+public sealed class AidxNews : Entity, IAidxWorkflowContent
 {
     public required string Slug { get; set; }
 
@@ -22,4 +22,12 @@ public sealed class AidxNews : Entity
 
     /// <summary>Editing ownership — distinct from <see cref="AuthorResearcherId"/> attribution.</summary>
     public Guid? CreatedByMembershipId { get; set; }
+
+    public Guid? RevisionOfId { get; set; }
+
+    public int RevisionNumber { get; set; }
+
+    public DateTimeOffset? MergedAt { get; set; }
+
+    public DateTimeOffset? DiscardedAt { get; set; }
 }

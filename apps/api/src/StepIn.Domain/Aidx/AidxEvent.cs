@@ -3,7 +3,7 @@ using StepIn.Domain.Common;
 namespace StepIn.Domain.Aidx;
 
 /// <summary>Timestamps are stored as timestamptz. Display timezone belongs to the presentation layer.</summary>
-public sealed class AidxEvent : Entity
+public sealed class AidxEvent : Entity, IAidxWorkflowContent
 {
     public required string Slug { get; set; }
 
@@ -27,4 +27,12 @@ public sealed class AidxEvent : Entity
 
     /// <summary>Editing ownership — distinct from authorship (events have no author field).</summary>
     public Guid? CreatedByMembershipId { get; set; }
+
+    public Guid? RevisionOfId { get; set; }
+
+    public int RevisionNumber { get; set; }
+
+    public DateTimeOffset? MergedAt { get; set; }
+
+    public DateTimeOffset? DiscardedAt { get; set; }
 }

@@ -85,6 +85,10 @@ public sealed class ApplicationDbContext(
 
     public DbSet<AidxMembershipAuditEntry> AidxMembershipAuditEntries => Set<AidxMembershipAuditEntry>();
 
+    public DbSet<AidxContentSnapshot> AidxContentSnapshots => Set<AidxContentSnapshot>();
+
+    public DbSet<AidxEditorialAuditEntry> AidxEditorialAuditEntries => Set<AidxEditorialAuditEntry>();
+
     IQueryable<ApplicationUser> IApplicationDbContext.Users => Users;
 
     IQueryable<AidxResearchArea> IApplicationDbContext.AidxResearchAreas => AidxResearchAreas;
@@ -104,6 +108,10 @@ public sealed class ApplicationDbContext(
     IQueryable<AidxMembership> IApplicationDbContext.AidxMemberships => AidxMemberships;
 
     IQueryable<AidxMembershipAuditEntry> IApplicationDbContext.AidxMembershipAuditEntries => AidxMembershipAuditEntries;
+
+    IQueryable<AidxContentSnapshot> IApplicationDbContext.AidxContentSnapshots => AidxContentSnapshots;
+
+    IQueryable<AidxEditorialAuditEntry> IApplicationDbContext.AidxEditorialAuditEntries => AidxEditorialAuditEntries;
 
     IQueryable<CandidateProfile> IApplicationDbContext.CandidateProfiles => CandidateProfiles;
 

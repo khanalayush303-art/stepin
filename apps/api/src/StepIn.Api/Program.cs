@@ -108,6 +108,7 @@ app.MapAidxPublicEndpoints();
 app.MapAidxAdminEndpoints();
 app.MapAidxOpportunityAdminEndpoints();
 app.MapAidxMembershipEndpoints();
+app.MapAidxWorkflowEndpoints();
 
 app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
 

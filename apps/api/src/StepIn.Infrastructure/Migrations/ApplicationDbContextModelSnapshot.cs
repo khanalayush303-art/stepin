@@ -23,6 +23,98 @@ namespace StepIn.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("StepIn.Domain.Aidx.AidxContentSnapshot", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ContentJson")
+                        .IsRequired()
+                        .HasMaxLength(50000)
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<int>("SnapshotNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("SubjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("SubmittedByMembershipId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SubmittedByMembershipId");
+
+                    b.HasIndex("SubjectId", "SnapshotNumber")
+                        .IsUnique();
+
+                    b.ToTable("AidxContentSnapshots", "aidx");
+                });
+
+            modelBuilder.Entity("StepIn.Domain.Aidx.AidxEditorialAuditEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(5000)
+                        .HasColumnType("character varying(5000)");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<Guid?>("PerformedByMembershipId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("PerformedByUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("SnapshotId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("SubjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PerformedByMembershipId");
+
+                    b.HasIndex("PerformedByUserId");
+
+                    b.HasIndex("SnapshotId");
+
+                    b.HasIndex("ContentType", "SubjectId");
+
+                    b.ToTable("AidxEditorialAuditEntries", "aidx");
+                });
+
             modelBuilder.Entity("StepIn.Domain.Aidx.AidxEvent", b =>
                 {
                     b.Property<Guid>("Id")
@@ -40,6 +132,9 @@ namespace StepIn.Infrastructure.Migrations
                         .HasMaxLength(10000)
                         .HasColumnType("character varying(10000)");
 
+                    b.Property<DateTimeOffset?>("DiscardedAt")
+                        .HasColumnType("timestamptz");
+
                     b.Property<DateTimeOffset?>("EndsAt")
                         .HasColumnType("timestamptz");
 
@@ -51,9 +146,18 @@ namespace StepIn.Infrastructure.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("character varying(300)");
 
+                    b.Property<DateTimeOffset?>("MergedAt")
+                        .HasColumnType("timestamptz");
+
                     b.Property<string>("RegistrationUrl")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
+
+                    b.Property<int>("RevisionNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("RevisionOfId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Slug")
                         .IsRequired()
@@ -80,12 +184,24 @@ namespace StepIn.Infrastructure.Migrations
                     b.Property<DateTimeOffset?>("UpdatedAt")
                         .HasColumnType("timestamptz");
 
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedByMembershipId");
 
+                    b.HasIndex("RevisionOfId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_AidxEvents_OneOpenRevisionPerCanonical")
+                        .HasFilter("\"RevisionOfId\" IS NOT NULL AND \"MergedAt\" IS NULL AND \"DiscardedAt\" IS NULL");
+
                     b.HasIndex("Slug")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("\"RevisionOfId\" IS NULL");
 
                     b.HasIndex("Status", "StartsAt");
 
@@ -204,12 +320,24 @@ namespace StepIn.Infrastructure.Migrations
                     b.Property<Guid?>("CreatedByMembershipId")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTimeOffset?>("DiscardedAt")
+                        .HasColumnType("timestamptz");
+
                     b.Property<string>("ImageKey")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
+                    b.Property<DateTimeOffset?>("MergedAt")
+                        .HasColumnType("timestamptz");
+
                     b.Property<DateTimeOffset?>("PublishedAt")
                         .HasColumnType("timestamptz");
+
+                    b.Property<int>("RevisionNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("RevisionOfId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Slug")
                         .IsRequired()
@@ -234,14 +362,26 @@ namespace StepIn.Infrastructure.Migrations
                     b.Property<DateTimeOffset?>("UpdatedAt")
                         .HasColumnType("timestamptz");
 
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.HasKey("Id");
 
                     b.HasIndex("AuthorResearcherId");
 
                     b.HasIndex("CreatedByMembershipId");
 
+                    b.HasIndex("RevisionOfId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_AidxNews_OneOpenRevisionPerCanonical")
+                        .HasFilter("\"RevisionOfId\" IS NOT NULL AND \"MergedAt\" IS NULL AND \"DiscardedAt\" IS NULL");
+
                     b.HasIndex("Slug")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("\"RevisionOfId\" IS NULL");
 
                     b.HasIndex("Status", "PublishedAt");
 
@@ -265,6 +405,9 @@ namespace StepIn.Infrastructure.Migrations
                         .HasMaxLength(20000)
                         .HasColumnType("character varying(20000)");
 
+                    b.Property<DateTimeOffset?>("DiscardedAt")
+                        .HasColumnType("timestamptz");
+
                     b.Property<DateOnly?>("EndDate")
                         .HasColumnType("date");
 
@@ -275,8 +418,17 @@ namespace StepIn.Infrastructure.Migrations
                     b.Property<bool>("Featured")
                         .HasColumnType("boolean");
 
+                    b.Property<DateTimeOffset?>("MergedAt")
+                        .HasColumnType("timestamptz");
+
                     b.Property<DateTimeOffset?>("PublishedAt")
                         .HasColumnType("timestamptz");
+
+                    b.Property<int>("RevisionNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("RevisionOfId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("ShortDescription")
                         .IsRequired()
@@ -304,12 +456,24 @@ namespace StepIn.Infrastructure.Migrations
                     b.Property<DateTimeOffset?>("UpdatedAt")
                         .HasColumnType("timestamptz");
 
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedByMembershipId");
 
+                    b.HasIndex("RevisionOfId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_AidxProjects_OneOpenRevisionPerCanonical")
+                        .HasFilter("\"RevisionOfId\" IS NOT NULL AND \"MergedAt\" IS NULL AND \"DiscardedAt\" IS NULL");
+
                     b.HasIndex("Slug")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("\"RevisionOfId\" IS NULL");
 
                     b.HasIndex("Status", "PublishedAt");
 
@@ -394,6 +558,9 @@ namespace StepIn.Infrastructure.Migrations
                     b.Property<Guid?>("CreatedByMembershipId")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTimeOffset?>("DiscardedAt")
+                        .HasColumnType("timestamptz");
+
                     b.Property<string>("Doi")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
@@ -401,6 +568,9 @@ namespace StepIn.Infrastructure.Migrations
                     b.Property<string>("ExternalUrl")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
+
+                    b.Property<DateTimeOffset?>("MergedAt")
+                        .HasColumnType("timestamptz");
 
                     b.Property<string>("PdfKey")
                         .HasMaxLength(500)
@@ -413,6 +583,20 @@ namespace StepIn.Infrastructure.Migrations
 
                     b.Property<bool>("Published")
                         .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset?>("PublishedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<int>("RevisionNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("RevisionOfId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
 
                     b.Property<string>("Title")
                         .IsRequired()
@@ -429,13 +613,24 @@ namespace StepIn.Infrastructure.Migrations
                     b.Property<int>("Year")
                         .HasColumnType("integer");
 
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedByMembershipId");
 
                     b.HasIndex("Doi")
                         .IsUnique()
-                        .HasFilter("\"Doi\" IS NOT NULL");
+                        .HasFilter("\"Doi\" IS NOT NULL AND \"RevisionOfId\" IS NULL");
+
+                    b.HasIndex("RevisionOfId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_AidxPublications_OneOpenRevisionPerCanonical")
+                        .HasFilter("\"RevisionOfId\" IS NOT NULL AND \"MergedAt\" IS NULL AND \"DiscardedAt\" IS NULL");
 
                     b.HasIndex("Published", "Year");
 
@@ -1455,12 +1650,44 @@ namespace StepIn.Infrastructure.Migrations
                     b.ToTable("Users", "stepin");
                 });
 
+            modelBuilder.Entity("StepIn.Domain.Aidx.AidxContentSnapshot", b =>
+                {
+                    b.HasOne("StepIn.Domain.Aidx.AidxMembership", null)
+                        .WithMany()
+                        .HasForeignKey("SubmittedByMembershipId")
+                        .OnDelete(DeleteBehavior.SetNull);
+                });
+
+            modelBuilder.Entity("StepIn.Domain.Aidx.AidxEditorialAuditEntry", b =>
+                {
+                    b.HasOne("StepIn.Domain.Aidx.AidxMembership", null)
+                        .WithMany()
+                        .HasForeignKey("PerformedByMembershipId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("StepIn.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("PerformedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("StepIn.Domain.Aidx.AidxContentSnapshot", null)
+                        .WithMany()
+                        .HasForeignKey("SnapshotId")
+                        .OnDelete(DeleteBehavior.SetNull);
+                });
+
             modelBuilder.Entity("StepIn.Domain.Aidx.AidxEvent", b =>
                 {
                     b.HasOne("StepIn.Domain.Aidx.AidxMembership", null)
                         .WithMany()
                         .HasForeignKey("CreatedByMembershipId")
                         .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("StepIn.Domain.Aidx.AidxEvent", null)
+                        .WithMany()
+                        .HasForeignKey("RevisionOfId")
+                        .OnDelete(DeleteBehavior.Cascade);
                 });
 
             modelBuilder.Entity("StepIn.Domain.Aidx.AidxMembership", b =>
@@ -1509,6 +1736,11 @@ namespace StepIn.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("CreatedByMembershipId")
                         .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("StepIn.Domain.Aidx.AidxNews", null)
+                        .WithMany()
+                        .HasForeignKey("RevisionOfId")
+                        .OnDelete(DeleteBehavior.Cascade);
                 });
 
             modelBuilder.Entity("StepIn.Domain.Aidx.AidxProject", b =>
@@ -1517,6 +1749,11 @@ namespace StepIn.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("CreatedByMembershipId")
                         .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("StepIn.Domain.Aidx.AidxProject", null)
+                        .WithMany()
+                        .HasForeignKey("RevisionOfId")
+                        .OnDelete(DeleteBehavior.Cascade);
                 });
 
             modelBuilder.Entity("StepIn.Domain.Aidx.AidxProjectResearchArea", b =>
@@ -1568,6 +1805,11 @@ namespace StepIn.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("CreatedByMembershipId")
                         .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("StepIn.Domain.Aidx.AidxPublication", null)
+                        .WithMany()
+                        .HasForeignKey("RevisionOfId")
+                        .OnDelete(DeleteBehavior.Cascade);
                 });
 
             modelBuilder.Entity("StepIn.Domain.Aidx.AidxPublicationAuthor", b =>

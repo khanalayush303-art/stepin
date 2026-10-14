@@ -71,6 +71,10 @@ public interface IApplicationDbContext
 
     IQueryable<AidxMembershipAuditEntry> AidxMembershipAuditEntries { get; }
 
+    IQueryable<AidxContentSnapshot> AidxContentSnapshots { get; }
+
+    IQueryable<AidxEditorialAuditEntry> AidxEditorialAuditEntries { get; }
+
     /// <summary>Tracks a new entity for insertion on the next <see cref="SaveChangesAsync"/>.</summary>
     void Add<TEntity>(TEntity entity)
         where TEntity : class;

@@ -2,11 +2,12 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useClerk, useUser } from "@clerk/nextjs";
 import type { LucideIcon } from "lucide-react";
 import { LogOut } from "lucide-react";
 import { Logo } from "@/components/layout/logo";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -34,14 +35,29 @@ export function DashboardShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const router = useRouter();
   const { user } = useUser();
   const { signOut } = useClerk();
   const [signingOut, setSigningOut] = React.useState(false);
+  const [signOutError, setSignOutError] = React.useState(false);
 
   async function onSignOut() {
+    if (signingOut) return; // Button is already disabled while loading; this also covers the Enter-key repeat case.
     setSigningOut(true);
-    await signOut(() => router.push("/sign-in"));
+    setSignOutError(false);
+    try {
+      // No destination is passed here — Clerk's own `afterSignOutUrl` (set on
+      // ClerkProvider) is what navigates once the session is *actually* cleared, and that
+      // navigation also triggers Clerk's own router.refresh() to drop the Next.js Router
+      // Cache. The previous version pushed its own router.push("/sign-in") as a signOut()
+      // callback, which bypasses that coordination entirely (the callback replaces Clerk's
+      // navigate step rather than running alongside it) and raced a separate, uncoordinated
+      // client-side transition against Clerk's own session-teardown navigation — which is
+      // why Logout could land back on the dashboard instead of signing out.
+      await signOut();
+    } catch {
+      setSignOutError(true);
+      setSigningOut(false);
+    }
   }
 
   return (
@@ -94,25 +110,30 @@ export function DashboardShell({
           </nav>
         </div>
 
-        <div className="flex items-center justify-between gap-2 border-t border-border p-4">
-          <div className="min-w-0">
-            <p className="truncate text-small font-medium text-foreground">
-              {user ? user.fullName ?? user.firstName : "…"}
-            </p>
-            <p className="truncate text-caption text-muted-foreground">
-              {user?.primaryEmailAddress?.emailAddress}
-            </p>
+        <div className="flex flex-col gap-2 border-t border-border p-4">
+          {signOutError ? (
+            <Alert tone="error" title="Couldn't sign you out. Please try again." />
+          ) : null}
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <p className="truncate text-small font-medium text-foreground">
+                {user ? user.fullName ?? user.firstName : "…"}
+              </p>
+              <p className="truncate text-caption text-muted-foreground">
+                {user?.primaryEmailAddress?.emailAddress}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="Sign out"
+              onClick={onSignOut}
+              loading={signingOut}
+            >
+              <LogOut aria-hidden="true" />
+            </Button>
           </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label="Sign out"
-            onClick={onSignOut}
-            loading={signingOut}
-          >
-            <LogOut aria-hidden="true" />
-          </Button>
         </div>
       </aside>
 

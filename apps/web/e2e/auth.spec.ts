@@ -44,10 +44,13 @@ for (const path of [
   "/recruiter/jobs/123/edit",
   "/recruiter/applications",
   "/recruiter/applications/123",
+  "/recruiter/interviews",
 ]) {
-  test(`${path} redirects an unauthenticated visitor to sign-in`, async ({ page }) => {
-    await page.goto(path);
+  test(`${path} redirects an unauthenticated visitor to sign-in, not the 404 page`, async ({ page }) => {
+    const response = await page.goto(path);
+    expect(response?.status()).toBeLessThan(400);
     await expect(page).toHaveURL(/\/sign-in\?returnTo=%2Frecruiter$/);
+    await expect(page.getByText("We could not find that page")).toHaveCount(0);
   });
 }
 
@@ -80,10 +83,20 @@ for (const path of [
   });
 }
 
-for (const path of ["/admin/verification", "/admin/verification/123"]) {
-  test(`${path} redirects an unauthenticated visitor to sign-in`, async ({ page }) => {
-    await page.goto(path);
+for (const path of [
+  "/admin/verification",
+  "/admin/verification/123",
+  "/admin/users",
+  "/admin/companies",
+  "/admin/jobs",
+  "/admin/reports",
+  "/admin/audit",
+]) {
+  test(`${path} redirects an unauthenticated visitor to sign-in, not the 404 page`, async ({ page }) => {
+    const response = await page.goto(path);
+    expect(response?.status()).toBeLessThan(400);
     await expect(page).toHaveURL(/\/sign-in\?returnTo=%2Fadmin$/);
+    await expect(page.getByText("We could not find that page")).toHaveCount(0);
   });
 }
 

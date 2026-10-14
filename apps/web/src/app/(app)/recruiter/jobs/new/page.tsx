@@ -16,7 +16,7 @@ const NAV: DashboardNavItem[] = [
   { href: "/recruiter", label: "Overview", icon: LayoutDashboard },
   { href: "/recruiter/jobs", label: "Job listings", icon: FileText },
   { href: "/recruiter/applications", label: "Applications", icon: Users },
-  { href: "/recruiter/interviews", label: "Interviews", icon: Clock, badge: "5" },
+  { href: "/recruiter/interviews", label: "Interviews", icon: Clock, comingSoon: true },
   { href: "/recruiter/profile", label: "Company profile", icon: Building2 },
 ];
 

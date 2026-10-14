@@ -28,7 +28,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en-AU" suppressHydrationWarning>
       <body style={{ ["--font-inter" as string]: "'Inter Variable'" }}>
-        <ClerkProvider appearance={clerkAppearance}>
+        {/*
+          afterSignOutUrl is the single source of truth Clerk itself redirects to once a
+          session is actually cleared (it drives Clerk's own internal setActive navigation,
+          which also forces a router.refresh() to invalidate the Next.js Router Cache — see
+          DashboardShell's sign-out handler for why that matters). Any future <UserButton />
+          or <SignOutButton /> inherits this automatically; nothing has to repeat it.
+        */}
+        <ClerkProvider appearance={clerkAppearance} afterSignOutUrl="/sign-in">
           <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
         </ClerkProvider>
       </body>

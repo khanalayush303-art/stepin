@@ -14,6 +14,9 @@ public sealed class AidxNews : Entity, IAidxWorkflowContent
 
     public string? ImageKey { get; set; }
 
+    /// <summary>Required (at the application-validation layer) whenever <see cref="ImageKey"/> is set.</summary>
+    public string? ImageAltText { get; set; }
+
     public Guid? AuthorResearcherId { get; set; }
 
     public AidxContentStatus Status { get; set; } = AidxContentStatus.Draft;

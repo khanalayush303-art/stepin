@@ -17,6 +17,7 @@ public sealed class AidxEventConfiguration : IEntityTypeConfiguration<AidxEvent>
         builder.Property(e => e.RegistrationUrl).HasMaxLength(500);
         builder.Property(e => e.SpeakerName).HasMaxLength(200);
         builder.Property(e => e.ImageKey).HasMaxLength(500);
+        builder.Property(e => e.ImageAltText).HasMaxLength(300);
         builder.Property(e => e.Status).HasConversion<string>().HasMaxLength(20);
 
         builder.HasIndex(e => e.Slug).IsUnique().HasFilter("\"RevisionOfId\" IS NULL");

@@ -21,7 +21,7 @@ public sealed class MigrateDatabaseCommandTests : IAsyncLifetime
     // only this far leaves exactly AddCareerGoals/AddPortfolioProjects/AddInterviewPractice/
     // AddExperiencePassport pending, the same state the production database is actually in.
     private const string LastPreCareerIntelligenceMigration = "20261005021348_AddAidxFoundations";
-    private const string FinalExpectedMigration = "20261015051309_AddAidxResearcherImageAltText";
+    private const string FinalExpectedMigration = "20261015092429_AddAidxNewsEventImageAltText";
 
     private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:17-alpine")
         .WithDatabase("stepin_migrate_test")
@@ -149,7 +149,7 @@ public sealed class MigrateDatabaseCommandTests : IAsyncLifetime
             "20261014145029_AddAidxMembership",
             "20261014153949_AddAidxEditorialWorkflow",
             "20261014222839_AddAidxCollaboration",
-            "20261015051309_AddAidxResearcherImageAltText",
+            "20261015092429_AddAidxNewsEventImageAltText",
         ]);
         (await verify.Database.GetPendingMigrationsAsync(ct)).Should().BeEmpty();
     }

@@ -117,7 +117,7 @@ public static class AidxMediaEndpoints
     // ---- News image (Contributor-authored, revision-aware) ---------------------------------
 
     private static async Task<IResult> UploadNewsImageAsync(
-        Guid id, IFormFile file, ClaimsPrincipal principal, ApplicationDbContext db,
+        Guid id, IFormFile file, [Microsoft.AspNetCore.Mvc.FromForm] string? altText, ClaimsPrincipal principal, ApplicationDbContext db,
         AidxContentEditingService editing, IAidxMediaStorage storage, CancellationToken cancellationToken)
     {
         var (user, membership, failure) = await AidxWorkflowSharedHelpers.ResolveActorAsync(principal, db, cancellationToken);
@@ -145,6 +145,14 @@ public static class AidxMediaEndpoints
             }
         }
 
+        if (string.IsNullOrWhiteSpace(altText))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["altText"] = ["Alt text is required when uploading an image."],
+            });
+        }
+
         var validation = await AidxMediaValidation.ValidateImageAsync(file, cancellationToken);
         if (!validation.Success)
         {
@@ -155,6 +163,7 @@ public static class AidxMediaEndpoints
         var oldKey = target.ImageKey;
         var newKey = await storage.SaveAsync(new MemoryStream(validation.Content!), validation.Extension!, cancellationToken);
         target.ImageKey = newKey;
+        target.ImageAltText = altText.Trim();
         await db.SaveChangesAsync(cancellationToken);
 
         if (oldKey is not null)
@@ -195,7 +204,7 @@ public static class AidxMediaEndpoints
     // ---- Event image (Contributor-authored, revision-aware) --------------------------------
 
     private static async Task<IResult> UploadEventImageAsync(
-        Guid id, IFormFile file, ClaimsPrincipal principal, ApplicationDbContext db,
+        Guid id, IFormFile file, [Microsoft.AspNetCore.Mvc.FromForm] string? altText, ClaimsPrincipal principal, ApplicationDbContext db,
         AidxContentEditingService editing, IAidxMediaStorage storage, CancellationToken cancellationToken)
     {
         var (user, membership, failure) = await AidxWorkflowSharedHelpers.ResolveActorAsync(principal, db, cancellationToken);
@@ -223,6 +232,14 @@ public static class AidxMediaEndpoints
             }
         }
 
+        if (string.IsNullOrWhiteSpace(altText))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["altText"] = ["Alt text is required when uploading an image."],
+            });
+        }
+
         var validation = await AidxMediaValidation.ValidateImageAsync(file, cancellationToken);
         if (!validation.Success)
         {
@@ -233,6 +250,7 @@ public static class AidxMediaEndpoints
         var oldKey = target.ImageKey;
         var newKey = await storage.SaveAsync(new MemoryStream(validation.Content!), validation.Extension!, cancellationToken);
         target.ImageKey = newKey;
+        target.ImageAltText = altText.Trim();
         await db.SaveChangesAsync(cancellationToken);
 
         if (oldKey is not null)

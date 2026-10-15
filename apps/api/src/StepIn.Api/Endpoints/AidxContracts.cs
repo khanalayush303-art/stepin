@@ -108,7 +108,8 @@ public sealed record AidxAdminEventSummaryResponse(
     string? Location,
     string? SpeakerName);
 
-/// <summary>Admin edit view. The image key is deliberately absent.</summary>
+/// <summary>Admin edit view. The raw image storage key is deliberately absent — the image, when one
+/// exists, is always reachable at the fixed <c>/api/v1/aidx/media/events/{id}/image</c> URL.</summary>
 public sealed record AidxAdminEventDetailResponse(
     Guid Id,
     string Slug,
@@ -122,7 +123,9 @@ public sealed record AidxAdminEventDetailResponse(
     string? SpeakerName,
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt,
-    string? Version = null);
+    string? Version = null,
+    bool HasImage = false,
+    string? ImageAltText = null);
 
 // ---- Admin news reads --------------------------------------------------------
 
@@ -137,7 +140,9 @@ public sealed record AidxAdminNewsSummaryResponse(
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt);
 
-/// <summary>Admin edit view. The author is identified by display name only. The image key is not returned.</summary>
+/// <summary>Admin edit view. The author is identified by display name only. The raw image storage
+/// key is not returned — the image, when one exists, is always reachable at the fixed
+/// <c>/api/v1/aidx/media/news/{id}/image</c> URL.</summary>
 public sealed record AidxAdminNewsDetailResponse(
     Guid Id,
     string Slug,
@@ -150,7 +155,9 @@ public sealed record AidxAdminNewsDetailResponse(
     DateTimeOffset? UpdatedAt,
     Guid? AuthorResearcherId,
     string? AuthorName,
-    string? Version = null);
+    string? Version = null,
+    bool HasImage = false,
+    string? ImageAltText = null);
 
 // ---- Admin publication reads -------------------------------------------------
 
@@ -163,7 +170,8 @@ public sealed record AidxAdminPublicationSummaryResponse(
     string? Venue,
     string? Doi,
     bool Published,
-    IReadOnlyList<string> Authors);
+    IReadOnlyList<string> Authors,
+    string Status = "Draft");
 
 /// <summary>
 /// One ordered author. Exactly one of ResearcherId or ExternalAuthorName is set. ResearcherPublished is null
@@ -177,7 +185,8 @@ public sealed record AidxAdminPublicationAuthorResponse(
     bool? ResearcherPublished);
 
 /// <summary>
-/// Admin edit view of a publication. No PDF storage key is returned: there is no upload in this phase.
+/// Admin edit view of a publication. The raw PDF storage key is not returned — the file, when one
+/// exists, is always reachable at the fixed <c>/api/v1/aidx/media/publications/{id}/pdf</c> URL.
 /// </summary>
 public sealed record AidxAdminPublicationDetailResponse(
     Guid Id,
@@ -193,7 +202,8 @@ public sealed record AidxAdminPublicationDetailResponse(
     IReadOnlyList<Guid> ResearchAreaIds,
     IReadOnlyList<AidxLinkedProjectResponse> Projects,
     string Status = "Draft",
-    string? Version = null);
+    string? Version = null,
+    bool HasPdf = false);
 
 // ---- Admin people reads ------------------------------------------------------
 
@@ -207,8 +217,9 @@ public sealed record AidxAdminPersonSummaryResponse(
     bool Published);
 
 /// <summary>
-/// Admin edit view of a person. No account or email fields. The storage key stays out, since there is no
-/// media upload in this phase.
+/// Admin edit view of a person. No account or email fields. The raw storage key stays out — a
+/// client never needs it, since the image (when one exists) is always reachable at the fixed,
+/// convention-based <c>/api/v1/aidx/media/people/{id}/image</c> URL.
 /// </summary>
 public sealed record AidxAdminPersonDetailResponse(
     Guid Id,
@@ -223,7 +234,9 @@ public sealed record AidxAdminPersonDetailResponse(
     string? WebsiteUrl,
     bool Published,
     IReadOnlyList<AidxLinkedProjectResponse> Projects,
-    IReadOnlyList<AidxLinkedPublicationResponse> Publications);
+    IReadOnlyList<AidxLinkedPublicationResponse> Publications,
+    bool HasImage = false,
+    string? ImageAltText = null);
 
 public sealed record AidxLinkedProjectResponse(Guid Id, string Title, string Slug, string Status);
 
@@ -282,9 +295,13 @@ public sealed record AidxAdminProjectDetailResponse(
     IReadOnlyList<Guid> ResearchAreaIds,
     IReadOnlyList<string> Technologies,
     IReadOnlyList<AidxAdminProjectResearcherResponse> Researchers,
-    string? Version = null);
+    string? Version = null,
+    string? Outcomes = null,
+    IReadOnlyList<AidxAdminProjectMilestoneResponse>? Milestones = null);
 
 public sealed record AidxAdminProjectResearcherResponse(Guid ResearcherId, string DisplayName, string? Role);
+
+public sealed record AidxAdminProjectMilestoneResponse(string Title, string? Description, DateOnly? TargetDate, DateOnly? CompletedDate);
 
 // ---- Admin requests and responses ------------------------------------------
 
@@ -318,9 +335,14 @@ public sealed record AidxProjectRequest(
     IReadOnlyList<string>? Technologies,
     IReadOnlyList<AidxProjectResearcherInput>? Researchers,
     string? ExpectedVersion = null,
-    string? Outcomes = null);
+    string? Outcomes = null,
+    IReadOnlyList<AidxProjectMilestoneInput>? Milestones = null);
 
 public sealed record AidxProjectResearcherInput(Guid ResearcherId, string? Role);
+
+/// <summary>Sent as the complete ordered set on every save — list order is the milestone order,
+/// there is no separate client-facing id to diff against.</summary>
+public sealed record AidxProjectMilestoneInput(string Title, string? Description, DateOnly? TargetDate, DateOnly? CompletedDate);
 
 public sealed record AidxResearcherRequest(
     string DisplayName,

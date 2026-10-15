@@ -183,6 +183,10 @@ namespace StepIn.Infrastructure.Migrations
                     b.Property<DateTimeOffset?>("EndsAt")
                         .HasColumnType("timestamptz");
 
+                    b.Property<string>("ImageAltText")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
                     b.Property<string>("ImageKey")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
@@ -419,6 +423,10 @@ namespace StepIn.Infrastructure.Migrations
 
                     b.Property<DateTimeOffset?>("DiscardedAt")
                         .HasColumnType("timestamptz");
+
+                    b.Property<string>("ImageAltText")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
 
                     b.Property<string>("ImageKey")
                         .HasMaxLength(500)

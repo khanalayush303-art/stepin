@@ -560,6 +560,90 @@ public sealed class AidxContractTests(AuthApiFactory factory) : IClassFixture<Au
     }
 
     [Fact]
+    public async Task A_stale_version_on_publish_or_archive_is_rejected_and_an_omitted_version_still_works()
+    {
+        var adminToken = await IssueAdminTokenAsync();
+        var created = await CreateProjectAsync(adminToken, Unique("Transition Guard"));
+
+        // A stale version on the publish/archive transition routes is rejected, exactly like the
+        // field-update route — "send expectedVersion on transitions", not just on edits.
+        var stalePublish = await SendAsync(HttpMethod.Post, $"/api/v1/admin/aidx/projects/{created.Id}/publish", adminToken,
+            new AidxWorkflowActionRequest("0"));
+        stalePublish.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var stillDraft = await db.AidxProjects.AsNoTracking().SingleAsync(p => p.Id == created.Id, TestContext.Current.CancellationToken);
+            stillDraft.Status.Should().Be(AidxContentStatus.Draft, "a rejected version check must not advance the workflow at all");
+        }
+
+        // Omitting the body entirely is still accepted — the legacy Admin frontend forms do not
+        // send it yet, a known, reported gap, and that must not become a hard 400.
+        var publishWithoutBody = await SendAsync(HttpMethod.Post, $"/api/v1/admin/aidx/projects/{created.Id}/publish", adminToken, null);
+        publishWithoutBody.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var publishedVersion = await CurrentProjectVersionAsync(created.Id);
+        var staleArchive = await SendAsync(HttpMethod.Post, $"/api/v1/admin/aidx/projects/{created.Id}/archive", adminToken,
+            new AidxWorkflowActionRequest("0"));
+        staleArchive.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var correctArchive = await SendAsync(HttpMethod.Post, $"/api/v1/admin/aidx/projects/{created.Id}/archive", adminToken,
+            new AidxWorkflowActionRequest(publishedVersion));
+        correctArchive.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    private async Task<string> CurrentProjectVersionAsync(Guid id)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var tracked = await db.AidxProjects.FirstAsync(p => p.Id == id, TestContext.Current.CancellationToken);
+        return db.Entry(tracked).Property<uint>("xmin").CurrentValue.ToString();
+    }
+
+    [Fact]
+    public async Task Admin_publishing_through_the_old_route_creates_real_audit_entries_not_just_a_silent_field_flip()
+    {
+        // Self-contained admin issuance (rather than the shared IssueAdminTokenAsync helper) so
+        // this test can recover the acting user's own Guid id and assert the audit trail is
+        // genuinely attributed to them — proving the one-click admin publish is audited, not a
+        // bare, untraceable field flip, and explicitly NOT a claim that this constitutes
+        // independent review (Admin bypasses self-review entirely by design; see
+        // AidxAdminEndpoints' own doc comments).
+        var clerkUserId = $"admin_{Guid.NewGuid():N}";
+        var adminToken = AuthApiFactory.IssueToken(clerkUserId, $"{Guid.NewGuid()}@example.com");
+        using (var setupClient = _factory.CreateClient())
+        {
+            using var setup = BuildRequest(HttpMethod.Post, "/api/v1/auth/account-setup", adminToken, new AccountSetupRequest("Applicant"));
+            (await setupClient.SendAsync(setup, TestContext.Current.CancellationToken)).EnsureSuccessStatusCode();
+        }
+
+        Guid adminUserId;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            await db.Users.Where(u => u.ClerkUserId == clerkUserId)
+                .ExecuteUpdateAsync(s => s.SetProperty(u => u.Role, UserRole.Admin), TestContext.Current.CancellationToken);
+            adminUserId = await db.Users.Where(u => u.ClerkUserId == clerkUserId).Select(u => u.Id)
+                .SingleAsync(TestContext.Current.CancellationToken);
+        }
+
+        var created = await CreateProjectAsync(adminToken, Unique("Audited Publish"));
+        (await SendAsync(HttpMethod.Post, $"/api/v1/admin/aidx/projects/{created.Id}/publish", adminToken, null))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using var verify = _factory.Services.CreateScope();
+        var verifyDb = verify.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var entries = await verifyDb.AidxEditorialAuditEntries
+            .Where(e => e.SubjectId == created.Id)
+            .OrderBy(e => e.CreatedAt)
+            .ToListAsync(TestContext.Current.CancellationToken);
+
+        entries.Select(e => e.Action).Should().Equal(AidxEditorialAction.Submitted, AidxEditorialAction.Published);
+        entries.Should().OnlyContain(e => e.PerformedByUserId == adminUserId, "the audit trail must name the actual acting user, not be anonymous or misattributed");
+    }
+
+    [Fact]
     public async Task Publishing_a_publication_through_the_admin_route_keeps_Status_and_Published_in_lockstep()
     {
         var adminToken = await IssueAdminTokenAsync();

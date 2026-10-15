@@ -181,6 +181,7 @@ public static class AidxAdminEndpoints
             .Include(p => p.ResearchAreas)
             .Include(p => p.Technologies)
             .Include(p => p.Researchers).ThenInclude(r => r.Researcher)
+            .Include(p => p.Milestones)
             .FirstOrDefaultAsync(p => p.Id == id && p.RevisionOfId == null, cancellationToken);
 
         if (project is null)
@@ -206,7 +207,12 @@ public static class AidxAdminEndpoints
                 .OrderBy(r => r.Researcher.DisplayName)
                 .Select(r => new AidxAdminProjectResearcherResponse(r.ResearcherId, r.Researcher.DisplayName, r.Role))
                 .ToList(),
-            editing.GetVersion(project)));
+            editing.GetVersion(project),
+            project.Outcomes,
+            project.Milestones
+                .OrderBy(m => m.SortOrder)
+                .Select(m => new AidxAdminProjectMilestoneResponse(m.Title, m.Description, m.TargetDate, m.CompletedDate))
+                .ToList()));
     }
 
     private static async Task<IResult> ListPeopleAsync(
@@ -307,7 +313,9 @@ public static class AidxAdminEndpoints
             person.WebsiteUrl,
             person.Published,
             projects,
-            publications));
+            publications,
+            person.ProfileImageKey is not null,
+            person.ImageAltText));
     }
 
     private static async Task<IResult> ListPublicationsAdminAsync(
@@ -376,7 +384,8 @@ public static class AidxAdminEndpoints
                 p.Venue,
                 p.Doi,
                 p.Published,
-                p.Authors.OrderBy(a => a.Position).Select(AuthorDisplayName).ToList())).ToList(),
+                p.Authors.OrderBy(a => a.Position).Select(AuthorDisplayName).ToList(),
+                p.Status.ToString())).ToList(),
             page ?? 1,
             pageSize ?? AidxEndpointHelpers.DefaultPageSize,
             total));
@@ -425,7 +434,8 @@ public static class AidxAdminEndpoints
                 .OrderBy(p => p.Title)
                 .ToList(),
             publication.Status.ToString(),
-            editing.GetVersion(publication)));
+            editing.GetVersion(publication),
+            publication.PdfKey is not null));
     }
 
     private static async Task<IResult> ListNewsAdminAsync(
@@ -513,7 +523,9 @@ public static class AidxAdminEndpoints
             news.UpdatedAt,
             news.AuthorResearcherId,
             authorName,
-            editing.GetVersion(news)));
+            editing.GetVersion(news),
+            news.ImageKey is not null,
+            news.ImageAltText));
     }
 
     private static async Task<IResult> ListEventsAdminAsync(
@@ -588,7 +600,6 @@ public static class AidxAdminEndpoints
             return Results.NotFound();
         }
 
-        // The image key is not returned: there is no media upload in this phase.
         return Results.Ok(new AidxAdminEventDetailResponse(
             evt.Id,
             evt.Slug,
@@ -602,7 +613,9 @@ public static class AidxAdminEndpoints
             evt.SpeakerName,
             evt.CreatedAt,
             evt.UpdatedAt,
-            editing.GetVersion(evt)));
+            editing.GetVersion(evt),
+            evt.ImageKey is not null,
+            evt.ImageAltText));
     }
 
     /// <summary>Researcher name when linked, otherwise the external name. Shared by list and detail.</summary>
@@ -742,6 +755,7 @@ public static class AidxAdminEndpoints
             .Include(p => p.ResearchAreas)
             .Include(p => p.Technologies)
             .Include(p => p.Researchers)
+            .Include(p => p.Milestones)
             .FirstOrDefaultAsync(p => p.Id == id && p.RevisionOfId == null, cancellationToken);
 
         if (canonical is null)
@@ -795,12 +809,12 @@ public static class AidxAdminEndpoints
     /// Admin already has access to.
     /// </summary>
     private static Task<IResult> PublishProjectAsync(
-        Guid id, ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken) =>
-        PublishThroughWorkflowAsync(db.AidxProjects, id, AidxContentType.Project, onFirstPublish: null, principal, db, editing, cancellationToken);
+        Guid id, AidxWorkflowActionRequest? request, ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken) =>
+        PublishThroughWorkflowAsync(db.AidxProjects, id, AidxContentType.Project, onFirstPublish: null, principal, db, editing, cancellationToken, request?.ExpectedVersion);
 
     private static Task<IResult> ArchiveProjectAsync(
-        Guid id, ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken) =>
-        ArchiveThroughWorkflowAsync(db.AidxProjects, id, AidxContentType.Project, onArchive: null, principal, db, editing, cancellationToken);
+        Guid id, AidxWorkflowActionRequest? request, ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken) =>
+        ArchiveThroughWorkflowAsync(db.AidxProjects, id, AidxContentType.Project, onArchive: null, principal, db, editing, cancellationToken, request?.ExpectedVersion);
 
     internal static async Task<Dictionary<string, string[]>> ValidateProjectAsync(
         AidxProjectRequest request, IApplicationDbContext db, CancellationToken cancellationToken)
@@ -833,6 +847,20 @@ public static class AidxAdminEndpoints
         if (researcherIds.Count > 0 && await db.AidxResearchers.CountAsync(r => researcherIds.Contains(r.Id), cancellationToken) != researcherIds.Count)
         {
             AidxEndpointHelpers.AddError(errors, "researchers", "One or more researchers do not exist.");
+        }
+
+        var milestones = request.Milestones ?? [];
+        if (milestones.Any(m => string.IsNullOrWhiteSpace(m.Title)))
+        {
+            AidxEndpointHelpers.AddError(errors, "milestones", "Each milestone needs a title.");
+        }
+        else if (milestones.Any(m => m.Title.Trim().Length > 300))
+        {
+            AidxEndpointHelpers.AddError(errors, "milestones", "Each milestone title must be at most 300 characters.");
+        }
+        if (milestones.Any(m => m.Description is { Length: > 5000 }))
+        {
+            AidxEndpointHelpers.AddError(errors, "milestones", "Each milestone description must be at most 5000 characters.");
         }
 
         return errors;
@@ -888,6 +916,30 @@ public static class AidxAdminEndpoints
         foreach (var (researcherId, role) in researcherRoles.Where(kv => project.Researchers.All(r => r.ResearcherId != kv.Key)))
         {
             project.Researchers.Add(new AidxProjectResearcher { ProjectId = project.Id, ResearcherId = researcherId, Role = role });
+        }
+
+        // Milestones have no client-facing id — the form resends the complete ordered list on
+        // every save, so (unlike the keyed collections above) there is nothing to diff against:
+        // replace the stored set wholesale, in the order sent.
+        foreach (var stale in project.Milestones.ToList())
+        {
+            project.Milestones.Remove(stale);
+            db.RemoveRange(new[] { stale });
+        }
+
+        var milestones = request.Milestones ?? [];
+        for (var i = 0; i < milestones.Count; i++)
+        {
+            var m = milestones[i];
+            project.Milestones.Add(new AidxProjectMilestone
+            {
+                ProjectId = project.Id,
+                Title = m.Title.Trim(),
+                Description = AidxEndpointHelpers.Clean(m.Description),
+                TargetDate = m.TargetDate,
+                CompletedDate = m.CompletedDate,
+                SortOrder = i,
+            });
         }
     }
 
@@ -1084,12 +1136,12 @@ public static class AidxAdminEndpoints
     /// longer diverge, since nothing else is allowed to write either of them.
     /// </summary>
     private static Task<IResult> PublishPublicationAsync(
-        Guid id, ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken) =>
-        PublishThroughWorkflowAsync(db.AidxPublications, id, AidxContentType.Publication, onFirstPublish: p => p.Published = true, principal, db, editing, cancellationToken);
+        Guid id, AidxWorkflowActionRequest? request, ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken) =>
+        PublishThroughWorkflowAsync(db.AidxPublications, id, AidxContentType.Publication, onFirstPublish: p => p.Published = true, principal, db, editing, cancellationToken, request?.ExpectedVersion);
 
     private static Task<IResult> ArchivePublicationAsync(
-        Guid id, ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken) =>
-        ArchiveThroughWorkflowAsync(db.AidxPublications, id, AidxContentType.Publication, onArchive: p => p.Published = false, principal, db, editing, cancellationToken);
+        Guid id, AidxWorkflowActionRequest? request, ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken) =>
+        ArchiveThroughWorkflowAsync(db.AidxPublications, id, AidxContentType.Publication, onArchive: p => p.Published = false, principal, db, editing, cancellationToken, request?.ExpectedVersion);
 
     internal static async Task<Dictionary<string, string[]>> ValidatePublicationAsync(
         AidxPublicationRequest request, Guid excludeId, IApplicationDbContext db, CancellationToken cancellationToken)
@@ -1301,12 +1353,12 @@ public static class AidxAdminEndpoints
     }
 
     private static Task<IResult> PublishNewsAsync(
-        Guid id, ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken) =>
-        PublishThroughWorkflowAsync(db.AidxNews, id, AidxContentType.News, onFirstPublish: null, principal, db, editing, cancellationToken);
+        Guid id, AidxWorkflowActionRequest? request, ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken) =>
+        PublishThroughWorkflowAsync(db.AidxNews, id, AidxContentType.News, onFirstPublish: null, principal, db, editing, cancellationToken, request?.ExpectedVersion);
 
     private static Task<IResult> ArchiveNewsAsync(
-        Guid id, ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken) =>
-        ArchiveThroughWorkflowAsync(db.AidxNews, id, AidxContentType.News, onArchive: null, principal, db, editing, cancellationToken);
+        Guid id, AidxWorkflowActionRequest? request, ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken) =>
+        ArchiveThroughWorkflowAsync(db.AidxNews, id, AidxContentType.News, onArchive: null, principal, db, editing, cancellationToken, request?.ExpectedVersion);
 
     internal static async Task<Dictionary<string, string[]>> ValidateNewsAsync(
         AidxNewsRequest request, Guid excludeId, IApplicationDbContext db, CancellationToken cancellationToken)
@@ -1408,12 +1460,12 @@ public static class AidxAdminEndpoints
     }
 
     private static Task<IResult> PublishEventAsync(
-        Guid id, ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken) =>
-        PublishThroughWorkflowAsync(db.AidxEvents, id, AidxContentType.Event, onFirstPublish: null, principal, db, editing, cancellationToken);
+        Guid id, AidxWorkflowActionRequest? request, ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken) =>
+        PublishThroughWorkflowAsync(db.AidxEvents, id, AidxContentType.Event, onFirstPublish: null, principal, db, editing, cancellationToken, request?.ExpectedVersion);
 
     private static Task<IResult> ArchiveEventAsync(
-        Guid id, ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken) =>
-        ArchiveThroughWorkflowAsync(db.AidxEvents, id, AidxContentType.Event, onArchive: null, principal, db, editing, cancellationToken);
+        Guid id, AidxWorkflowActionRequest? request, ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken) =>
+        ArchiveThroughWorkflowAsync(db.AidxEvents, id, AidxContentType.Event, onArchive: null, principal, db, editing, cancellationToken, request?.ExpectedVersion);
 
     internal static Dictionary<string, string[]> ValidateEvent(AidxEventRequest request)
     {
@@ -1569,7 +1621,8 @@ public static class AidxAdminEndpoints
     /// </summary>
     private static async Task<IResult> PublishThroughWorkflowAsync<TContent>(
         DbSet<TContent> set, Guid id, AidxContentType contentType, Action<TContent>? onFirstPublish,
-        ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken)
+        ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken,
+        string? expectedVersion = null)
         where TContent : class, IAidxWorkflowContent
     {
         var (user, membership, failure) = await AidxWorkflowSharedHelpers.ResolveActorAsync(principal, db, cancellationToken);
@@ -1582,6 +1635,11 @@ public static class AidxAdminEndpoints
         if (canonical is null)
         {
             return Results.NotFound();
+        }
+
+        if (expectedVersion is not null && !string.Equals(editing.GetVersion(canonical), expectedVersion, StringComparison.Ordinal))
+        {
+            return VersionConflict();
         }
 
         if (canonical.Status is AidxContentStatus.Draft or AidxContentStatus.ChangesRequested)
@@ -1612,7 +1670,8 @@ public static class AidxAdminEndpoints
 
     private static async Task<IResult> ArchiveThroughWorkflowAsync<TContent>(
         DbSet<TContent> set, Guid id, AidxContentType contentType, Action<TContent>? onArchive,
-        ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken)
+        ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken,
+        string? expectedVersion = null)
         where TContent : class, IAidxWorkflowContent
     {
         var (user, membership, failure) = await AidxWorkflowSharedHelpers.ResolveActorAsync(principal, db, cancellationToken);
@@ -1625,6 +1684,11 @@ public static class AidxAdminEndpoints
         if (canonical is null)
         {
             return Results.NotFound();
+        }
+
+        if (expectedVersion is not null && !string.Equals(editing.GetVersion(canonical), expectedVersion, StringComparison.Ordinal))
+        {
+            return VersionConflict();
         }
 
         var outcome = await editing.ArchiveAsync(

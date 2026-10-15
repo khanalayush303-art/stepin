@@ -15,6 +15,7 @@ public sealed class AidxNewsConfiguration : IEntityTypeConfiguration<AidxNews>
         builder.Property(n => n.Summary).HasMaxLength(500).IsRequired();
         builder.Property(n => n.Body).HasMaxLength(20000).IsRequired();
         builder.Property(n => n.ImageKey).HasMaxLength(500);
+        builder.Property(n => n.ImageAltText).HasMaxLength(300);
         builder.Property(n => n.Status).HasConversion<string>().HasMaxLength(20);
 
         builder.HasIndex(n => n.Slug).IsUnique().HasFilter("\"RevisionOfId\" IS NULL");

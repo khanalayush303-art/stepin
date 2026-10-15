@@ -344,8 +344,8 @@ public static class AidxWorkflowEndpoints
         {
             case AidxContentType.Project:
                 var proj = (AidxProject)content;
-                var projCanonical = proj.RevisionOfId is { } pcid ? await db.AidxProjects.Include(x => x.ResearchAreas).Include(x => x.Technologies).Include(x => x.Researchers).FirstOrDefaultAsync(x => x.Id == pcid, cancellationToken) : null;
-                outcome = await editing.ApproveAsync(proj, projCanonical, request.ExpectedVersion, type, CopyProjectFields, user!.Id, membership?.Id, cancellationToken);
+                var projCanonical = proj.RevisionOfId is { } pcid ? await db.AidxProjects.Include(x => x.ResearchAreas).Include(x => x.Technologies).Include(x => x.Researchers).Include(x => x.Milestones).FirstOrDefaultAsync(x => x.Id == pcid, cancellationToken) : null;
+                outcome = await editing.ApproveAsync(proj, projCanonical, request.ExpectedVersion, type, (revision, canonical) => CopyProjectFields(revision, canonical, db), user!.Id, membership?.Id, cancellationToken);
                 break;
             case AidxContentType.News:
                 var news = (AidxNews)content;
@@ -360,7 +360,7 @@ public static class AidxWorkflowEndpoints
             case AidxContentType.Publication:
                 var pub = (AidxPublication)content;
                 var pubCanonical = pub.RevisionOfId is { } pubcid ? await db.AidxPublications.Include(x => x.Authors).Include(x => x.ResearchAreas).Include(x => x.Projects).FirstOrDefaultAsync(x => x.Id == pubcid, cancellationToken) : null;
-                outcome = await editing.ApproveAsync(pub, pubCanonical, request.ExpectedVersion, type, CopyPublicationFields, user!.Id, membership?.Id, cancellationToken, onFirstPublish: p => p.Published = true);
+                outcome = await editing.ApproveAsync(pub, pubCanonical, request.ExpectedVersion, type, (revision, canonical) => CopyPublicationFields(revision, canonical, db), user!.Id, membership?.Id, cancellationToken, onFirstPublish: p => p.Published = true);
                 break;
             default:
                 return Results.NotFound();
@@ -369,7 +369,7 @@ public static class AidxWorkflowEndpoints
         return OutcomeToResult(outcome);
     }
 
-    private static void CopyProjectFields(AidxProject revision, AidxProject canonical)
+    private static void CopyProjectFields(AidxProject revision, AidxProject canonical, ApplicationDbContext db)
     {
         canonical.Title = revision.Title;
         canonical.ShortDescription = revision.ShortDescription;
@@ -381,6 +381,74 @@ public static class AidxWorkflowEndpoints
         canonical.Outcomes = revision.Outcomes;
         canonical.PublishedAt ??= DateTimeOffset.UtcNow;
         // Slug intentionally NOT copied — the canonical row's slug is its stable public URL.
+
+        // Nav collections (tags, technologies, team, milestones) are JsonIgnore'd out of the
+        // revision clone/snapshot (see AidxProject's own doc comment) and reparented explicitly by
+        // ReparentProject at begin-edit time — so the *revision* row genuinely holds whatever the
+        // editor last saved onto it. Approval must still copy that onto canonical explicitly: the
+        // scalar-only copy above previously left a published project's tags/team/milestones frozen
+        // at whatever they were before the revision, even after the revision was approved.
+        var areaIds = revision.ResearchAreas.Select(a => a.ResearchAreaId).ToHashSet();
+        foreach (var stale in canonical.ResearchAreas.Where(a => !areaIds.Contains(a.ResearchAreaId)).ToList())
+        {
+            canonical.ResearchAreas.Remove(stale);
+            db.Remove(stale);
+        }
+        foreach (var areaId in areaIds.Where(aid => canonical.ResearchAreas.All(a => a.ResearchAreaId != aid)))
+        {
+            canonical.ResearchAreas.Add(new AidxProjectResearchArea { ProjectId = canonical.Id, ResearchAreaId = areaId });
+        }
+
+        var techNames = revision.Technologies.Select(t => t.Name).ToHashSet();
+        foreach (var stale in canonical.Technologies.Where(t => !techNames.Contains(t.Name)).ToList())
+        {
+            canonical.Technologies.Remove(stale);
+            db.Remove(stale);
+        }
+        foreach (var name in techNames.Where(n => canonical.Technologies.All(t => t.Name != n)))
+        {
+            canonical.Technologies.Add(new AidxProjectTechnology { ProjectId = canonical.Id, Name = name });
+        }
+
+        var researcherIds = revision.Researchers.Select(r => r.ResearcherId).ToHashSet();
+        foreach (var stale in canonical.Researchers.Where(r => !researcherIds.Contains(r.ResearcherId)).ToList())
+        {
+            canonical.Researchers.Remove(stale);
+            db.Remove(stale);
+        }
+        foreach (var r in revision.Researchers)
+        {
+            var existing = canonical.Researchers.FirstOrDefault(cr => cr.ResearcherId == r.ResearcherId);
+            if (existing is null)
+            {
+                canonical.Researchers.Add(new AidxProjectResearcher { ProjectId = canonical.Id, ResearcherId = r.ResearcherId, Role = r.Role });
+            }
+            else
+            {
+                existing.Role = r.Role;
+            }
+        }
+
+        // Milestones have no client-facing id (the admin UI resends the complete ordered list on
+        // every save — see AidxProjectRequest.Milestones), so there is no stable key to diff
+        // against: replace canonical's set wholesale to match the revision's.
+        foreach (var stale in canonical.Milestones.ToList())
+        {
+            canonical.Milestones.Remove(stale);
+            db.Remove(stale);
+        }
+        foreach (var m in revision.Milestones.OrderBy(m => m.SortOrder))
+        {
+            canonical.Milestones.Add(new AidxProjectMilestone
+            {
+                ProjectId = canonical.Id,
+                Title = m.Title,
+                Description = m.Description,
+                TargetDate = m.TargetDate,
+                CompletedDate = m.CompletedDate,
+                SortOrder = m.SortOrder,
+            });
+        }
     }
 
     private static void CopyNewsFields(AidxNews revision, AidxNews canonical)
@@ -389,6 +457,7 @@ public static class AidxWorkflowEndpoints
         canonical.Summary = revision.Summary;
         canonical.Body = revision.Body;
         canonical.ImageKey = revision.ImageKey;
+        canonical.ImageAltText = revision.ImageAltText;
         canonical.AuthorResearcherId = revision.AuthorResearcherId;
         canonical.PublishedAt ??= DateTimeOffset.UtcNow;
     }
@@ -403,9 +472,10 @@ public static class AidxWorkflowEndpoints
         canonical.RegistrationUrl = revision.RegistrationUrl;
         canonical.SpeakerName = revision.SpeakerName;
         canonical.ImageKey = revision.ImageKey;
+        canonical.ImageAltText = revision.ImageAltText;
     }
 
-    private static void CopyPublicationFields(AidxPublication revision, AidxPublication canonical)
+    private static void CopyPublicationFields(AidxPublication revision, AidxPublication canonical, ApplicationDbContext db)
     {
         canonical.Title = revision.Title;
         canonical.Abstract = revision.Abstract;
@@ -418,6 +488,55 @@ public static class AidxWorkflowEndpoints
         canonical.PublishedAt ??= DateTimeOffset.UtcNow;
         // Doi intentionally NOT copied via this path in the minimal-viable form — changing a
         // published paper's DOI post-publish is not a supported edit in this delivery.
+
+        // See CopyProjectFields' comment: nav collections are reparented onto the revision at
+        // begin-edit time, but approval must still copy them onto canonical explicitly.
+        foreach (var stale in canonical.Authors.Where(a => revision.Authors.All(ra => ra.Position != a.Position)).ToList())
+        {
+            canonical.Authors.Remove(stale);
+            db.Remove(stale);
+        }
+        foreach (var a in revision.Authors)
+        {
+            var existing = canonical.Authors.FirstOrDefault(ca => ca.Position == a.Position);
+            if (existing is null)
+            {
+                canonical.Authors.Add(new AidxPublicationAuthor
+                {
+                    PublicationId = canonical.Id,
+                    Position = a.Position,
+                    ResearcherId = a.ResearcherId,
+                    ExternalAuthorName = a.ExternalAuthorName,
+                });
+            }
+            else
+            {
+                existing.ResearcherId = a.ResearcherId;
+                existing.ExternalAuthorName = a.ExternalAuthorName;
+            }
+        }
+
+        var areaIds = revision.ResearchAreas.Select(ra => ra.ResearchAreaId).ToHashSet();
+        foreach (var stale in canonical.ResearchAreas.Where(ra => !areaIds.Contains(ra.ResearchAreaId)).ToList())
+        {
+            canonical.ResearchAreas.Remove(stale);
+            db.Remove(stale);
+        }
+        foreach (var areaId in areaIds.Where(aid => canonical.ResearchAreas.All(ra => ra.ResearchAreaId != aid)))
+        {
+            canonical.ResearchAreas.Add(new AidxPublicationResearchArea { PublicationId = canonical.Id, ResearchAreaId = areaId });
+        }
+
+        var projectIds = revision.Projects.Select(p => p.ProjectId).ToHashSet();
+        foreach (var stale in canonical.Projects.Where(p => !projectIds.Contains(p.ProjectId)).ToList())
+        {
+            canonical.Projects.Remove(stale);
+            db.Remove(stale);
+        }
+        foreach (var projectId in projectIds.Where(pid => canonical.Projects.All(p => p.ProjectId != pid)))
+        {
+            canonical.Projects.Add(new AidxPublicationProject { PublicationId = canonical.Id, ProjectId = projectId });
+        }
     }
 
     private static async Task<IResult> DispatchReviewerActionAsync(

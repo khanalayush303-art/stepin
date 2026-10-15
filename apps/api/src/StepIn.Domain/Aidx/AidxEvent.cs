@@ -23,6 +23,9 @@ public sealed class AidxEvent : Entity, IAidxWorkflowContent
 
     public string? ImageKey { get; set; }
 
+    /// <summary>Required (at the application-validation layer) whenever <see cref="ImageKey"/> is set.</summary>
+    public string? ImageAltText { get; set; }
+
     public AidxContentStatus Status { get; set; } = AidxContentStatus.Draft;
 
     /// <summary>Editing ownership — distinct from authorship (events have no author field).</summary>

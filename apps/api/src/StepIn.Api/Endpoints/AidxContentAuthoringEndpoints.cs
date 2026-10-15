@@ -135,6 +135,7 @@ public static class AidxContentAuthoringEndpoints
             .Include(p => p.ResearchAreas)
             .Include(p => p.Technologies)
             .Include(p => p.Researchers)
+            .Include(p => p.Milestones)
             .FirstOrDefaultAsync(p => p.Id == id && p.RevisionOfId == null, cancellationToken);
 
         if (canonical is null)

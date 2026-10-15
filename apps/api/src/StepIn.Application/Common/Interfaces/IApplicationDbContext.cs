@@ -75,6 +75,14 @@ public interface IApplicationDbContext
 
     IQueryable<AidxEditorialAuditEntry> AidxEditorialAuditEntries { get; }
 
+    IQueryable<AidxProjectMilestone> AidxProjectMilestones { get; }
+
+    IQueryable<AidxCollaborationEnquiry> AidxCollaborationEnquiries { get; }
+
+    IQueryable<AidxEventRegistration> AidxEventRegistrations { get; }
+
+    IQueryable<AidxSavedItem> AidxSavedItems { get; }
+
     /// <summary>Tracks a new entity for insertion on the next <see cref="SaveChangesAsync"/>.</summary>
     void Add<TEntity>(TEntity entity)
         where TEntity : class;

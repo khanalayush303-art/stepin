@@ -550,4 +550,46 @@ public sealed class AidxWorkflowEndpointsTests(AuthApiFactory factory) : IClassF
             .Where(a => a.PublicationId == editable.Id).ToListAsync(TestContext.Current.CancellationToken);
         revisionAuthors.Should().ContainSingle(a => a.ExternalAuthorName == "A. Author");
     }
+
+    [Fact]
+    public async Task The_public_project_endpoint_never_returns_a_pending_or_merged_revision()
+    {
+        var (contributorToken, contributorUserId) = await NewUserAsync();
+        var contributorMembership = await GrantAsync(contributorUserId, AidxLabRole.Contributor);
+        var (editorToken, editorUserId) = await NewUserAsync();
+        await GrantAsync(editorUserId, AidxLabRole.Editor);
+
+        var project = await CreateDraftProjectAsync(contributorMembership.Id);
+        var v0 = await CurrentVersionAsync(project.Id);
+        await SendAsync(HttpMethod.Post, $"/api/v1/aidx/content/project/{project.Id}/submit", contributorToken, new AidxWorkflowActionRequest(v0));
+        var v1 = await CurrentVersionAsync(project.Id);
+        await SendAsync(HttpMethod.Post, $"/api/v1/aidx/content/project/{project.Id}/approve", editorToken, new AidxWorkflowActionRequest(v1));
+
+        // Open a revision (same slug as the canonical) and leave it pending — the public
+        // endpoint, queried by that shared slug, must resolve to the canonical row only.
+        var beginEdit = await SendAsync(HttpMethod.Post, $"/api/v1/aidx/content/project/{project.Id}/begin-edit", contributorToken);
+        var editable = await beginEdit.Content.ReadFromJsonAsync<AidxWorkflowStatusResponse>(TestContext.Current.CancellationToken);
+
+        var publicWhilePending = await SendAsync(HttpMethod.Get, $"/api/v1/aidx/projects/{project.Slug}", null);
+        publicWhilePending.StatusCode.Should().Be(HttpStatusCode.OK);
+        var pendingBody = await publicWhilePending.Content.ReadFromJsonAsync<AidxProjectDetailResponse>(TestContext.Current.CancellationToken);
+        pendingBody!.Id.Should().Be(project.Id, "the public endpoint must resolve the canonical row, never the pending revision, even though both share this slug");
+
+        // Submit and approve the revision — it merges onto canonical and is itself marked
+        // Published + MergedAt, meaning it now ALSO matches a naive "Status == Published" filter.
+        await SendAsync(HttpMethod.Post, $"/api/v1/aidx/content/project/{editable!.Id}/submit", contributorToken, new AidxWorkflowActionRequest(editable.Version));
+        var revisionVersion = await CurrentVersionAsync(editable.Id);
+        await SendAsync(HttpMethod.Post, $"/api/v1/aidx/content/project/{editable.Id}/approve", editorToken, new AidxWorkflowActionRequest(revisionVersion));
+
+        var publicAfterMerge = await SendAsync(HttpMethod.Get, $"/api/v1/aidx/projects/{project.Slug}", null);
+        publicAfterMerge.StatusCode.Should().Be(HttpStatusCode.OK);
+        var afterMergeBody = await publicAfterMerge.Content.ReadFromJsonAsync<AidxProjectDetailResponse>(TestContext.Current.CancellationToken);
+        afterMergeBody!.Id.Should().Be(project.Id, "still the canonical row's own id — a merged revision, despite also being Status=Published with the same slug, must never be the one returned");
+
+        // And the revision's own id is never independently resolvable through the public API.
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var revisionSlug = await db.AidxProjects.Where(p => p.Id == editable.Id).Select(p => p.Slug).SingleAsync(TestContext.Current.CancellationToken);
+        revisionSlug.Should().Be(project.Slug, "the revision was cloned with the same slug, by design");
+    }
 }

@@ -209,7 +209,8 @@ public sealed class AidxContentEditingService(ApplicationDbContext db)
         Action<TContent, TContent>? copyOntoCanonical,
         Guid actingUserId,
         Guid? actingMembershipId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<TContent>? onFirstPublish = null)
         where TContent : class, IAidxWorkflowContent
     {
         if (!AidxEditorialWorkflow.CanTransition(content.Status, AidxContentStatus.Published))
@@ -229,9 +230,13 @@ public sealed class AidxContentEditingService(ApplicationDbContext db)
 
         if (content.RevisionOfId is null)
         {
-            // First-ever publish: in place.
+            // First-ever publish: in place. onFirstPublish lets a caller set a content-type-specific
+            // compatibility field (e.g. AidxPublication.Published, dual-written alongside Status for
+            // the expand-migration rollout window — see aidx-migration-plan.md) that this generic
+            // method has no knowledge of.
             content.Status = AidxContentStatus.Published;
             content.MergedAt = DateTimeOffset.UtcNow;
+            onFirstPublish?.Invoke(content);
         }
         else
         {
@@ -271,12 +276,13 @@ public sealed class AidxContentEditingService(ApplicationDbContext db)
 
     public async Task<AidxEditOutcome> ArchiveAsync<TContent>(
         TContent content, string expectedVersion, AidxContentType contentType,
-        Guid actingUserId, Guid? actingMembershipId, CancellationToken cancellationToken)
+        Guid actingUserId, Guid? actingMembershipId, CancellationToken cancellationToken,
+        Action<TContent>? onArchive = null)
         where TContent : class, IAidxWorkflowContent
     {
         return await TransitionAsync(
             content, expectedVersion, AidxContentStatus.Archived, contentType,
-            AidxEditorialAction.Archived, actingUserId, actingMembershipId, comment: null, cancellationToken);
+            AidxEditorialAction.Archived, actingUserId, actingMembershipId, comment: null, cancellationToken, onArchive);
     }
 
     /// <summary>Abandons an open revision permanently — distinct from Withdraw, which keeps it
@@ -341,7 +347,7 @@ public sealed class AidxContentEditingService(ApplicationDbContext db)
     private async Task<AidxEditOutcome> TransitionAsync<TContent>(
         TContent content, string expectedVersion, AidxContentStatus to, AidxContentType contentType,
         AidxEditorialAction action, Guid actingUserId, Guid? actingMembershipId, string? comment,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, Action<TContent>? onTransition = null)
         where TContent : class, IAidxWorkflowContent
     {
         if (!AidxEditorialWorkflow.CanTransition(content.Status, to))
@@ -360,6 +366,7 @@ public sealed class AidxContentEditingService(ApplicationDbContext db)
             .FirstOrDefaultAsync(cancellationToken);
 
         content.Status = to;
+        onTransition?.Invoke(content);
         try
         {
             await db.SaveChangesAsync(cancellationToken);

@@ -42,6 +42,27 @@ builder.Services.AddOpenApi("v1", options => options.AddDocumentTransformer<Bear
 builder.Services.AddRequestTimeouts();
 builder.Services.AddResponseCompression();
 
+// Narrowly scoped to the new public AIDX collaboration submission endpoints (enquiries, event
+// registration) — never applied globally. Partitioned per remote IP (not AddFixedWindowLimiter's
+// single global bucket, which would let one caller's traffic starve every other caller's quota)
+// — these are the only two anonymous POST surfaces this feature adds. Testcontainers-backed
+// integration tests share one process/IP across many independent test cases hitting these same
+// routes, so the real 5/minute production limit is relaxed in the Testing environment only —
+// same environment-gating convention as the test-only role-probe endpoints further down.
+var aidxSubmissionPermitLimit = builder.Environment.IsEnvironment("Testing") ? 1000 : 5;
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("aidx-public-submission", httpContext => System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+        partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+        {
+            PermitLimit = aidxSubmissionPermitLimit,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
+});
+
 var app = builder.Build();
 
 // Logs only the normalized provider name actually selected by AddResumeStorage's own
@@ -78,6 +99,7 @@ app.UseRequestTimeouts();
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 // OpenAPI is exposed in every environment: the frontend generates its client
 // from it, and a document that only exists in Development drifts immediately.
@@ -110,6 +132,9 @@ app.MapAidxOpportunityAdminEndpoints();
 app.MapAidxMembershipEndpoints();
 app.MapAidxWorkflowEndpoints();
 app.MapAidxWorkspaceEndpoints();
+app.MapAidxSavedItemEndpoints();
+app.MapAidxCollaborationEndpoints();
+app.MapAidxEventRegistrationEndpoints();
 
 app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
 

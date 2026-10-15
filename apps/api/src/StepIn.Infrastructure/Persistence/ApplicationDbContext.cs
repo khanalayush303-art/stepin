@@ -89,6 +89,14 @@ public sealed class ApplicationDbContext(
 
     public DbSet<AidxEditorialAuditEntry> AidxEditorialAuditEntries => Set<AidxEditorialAuditEntry>();
 
+    public DbSet<AidxProjectMilestone> AidxProjectMilestones => Set<AidxProjectMilestone>();
+
+    public DbSet<AidxCollaborationEnquiry> AidxCollaborationEnquiries => Set<AidxCollaborationEnquiry>();
+
+    public DbSet<AidxEventRegistration> AidxEventRegistrations => Set<AidxEventRegistration>();
+
+    public DbSet<AidxSavedItem> AidxSavedItems => Set<AidxSavedItem>();
+
     IQueryable<ApplicationUser> IApplicationDbContext.Users => Users;
 
     IQueryable<AidxResearchArea> IApplicationDbContext.AidxResearchAreas => AidxResearchAreas;
@@ -112,6 +120,14 @@ public sealed class ApplicationDbContext(
     IQueryable<AidxContentSnapshot> IApplicationDbContext.AidxContentSnapshots => AidxContentSnapshots;
 
     IQueryable<AidxEditorialAuditEntry> IApplicationDbContext.AidxEditorialAuditEntries => AidxEditorialAuditEntries;
+
+    IQueryable<AidxProjectMilestone> IApplicationDbContext.AidxProjectMilestones => AidxProjectMilestones;
+
+    IQueryable<AidxCollaborationEnquiry> IApplicationDbContext.AidxCollaborationEnquiries => AidxCollaborationEnquiries;
+
+    IQueryable<AidxEventRegistration> IApplicationDbContext.AidxEventRegistrations => AidxEventRegistrations;
+
+    IQueryable<AidxSavedItem> IApplicationDbContext.AidxSavedItems => AidxSavedItems;
 
     IQueryable<CandidateProfile> IApplicationDbContext.CandidateProfiles => CandidateProfiles;
 

@@ -28,6 +28,10 @@ public sealed class AidxEvent : Entity, IAidxWorkflowContent
     /// <summary>Editing ownership — distinct from authorship (events have no author field).</summary>
     public Guid? CreatedByMembershipId { get; set; }
 
+    /// <summary>Null = unlimited. Enforced atomically at registration time under a
+    /// transaction-scoped advisory lock keyed to the event — see AidxEventRegistrationEndpoints.</summary>
+    public int? Capacity { get; set; }
+
     public Guid? RevisionOfId { get; set; }
 
     public int RevisionNumber { get; set; }

@@ -25,6 +25,10 @@ public sealed class AidxProject : Entity, IAidxWorkflowContent
 
     public DateTimeOffset? PublishedAt { get; set; }
 
+    /// <summary>Freeform results/impact text. Simple field, not a structured entity — the task
+    /// asks for presented content here, not queryable structured data.</summary>
+    public string? Outcomes { get; set; }
+
     /// <summary>
     /// Editing ownership — distinct from authorship. Null for pre-existing
     /// admin-created rows; never implicitly open to any Contributor edit
@@ -55,4 +59,7 @@ public sealed class AidxProject : Entity, IAidxWorkflowContent
 
     [JsonIgnore]
     public List<AidxProjectResearcher> Researchers { get; set; } = [];
+
+    [JsonIgnore]
+    public List<AidxProjectMilestone> Milestones { get; set; } = [];
 }

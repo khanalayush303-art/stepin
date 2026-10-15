@@ -23,6 +23,48 @@ namespace StepIn.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("StepIn.Domain.Aidx.AidxCollaborationEnquiry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)");
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(5000)
+                        .HasColumnType("character varying(5000)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId");
+
+                    b.ToTable("AidxCollaborationEnquiries", "aidx");
+                });
+
             modelBuilder.Entity("StepIn.Domain.Aidx.AidxContentSnapshot", b =>
                 {
                     b.Property<Guid>("Id")
@@ -121,6 +163,9 @@ namespace StepIn.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<int?>("Capacity")
+                        .HasColumnType("integer");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamptz");
 
@@ -206,6 +251,58 @@ namespace StepIn.Infrastructure.Migrations
                     b.HasIndex("Status", "StartsAt");
 
                     b.ToTable("AidxEvents", "aidx");
+                });
+
+            modelBuilder.Entity("StepIn.Domain.Aidx.AidxEventRegistration", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("CancellationTokenHash")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(320)
+                        .HasColumnType("character varying(320)");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("EventId", "Email")
+                        .IsUnique()
+                        .HasFilter("\"UserId\" IS NULL");
+
+                    b.HasIndex("EventId", "UserId")
+                        .IsUnique()
+                        .HasFilter("\"UserId\" IS NOT NULL");
+
+                    b.ToTable("AidxEventRegistrations", "aidx");
                 });
 
             modelBuilder.Entity("StepIn.Domain.Aidx.AidxMembership", b =>
@@ -421,6 +518,10 @@ namespace StepIn.Infrastructure.Migrations
                     b.Property<DateTimeOffset?>("MergedAt")
                         .HasColumnType("timestamptz");
 
+                    b.Property<string>("Outcomes")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
                     b.Property<DateTimeOffset?>("PublishedAt")
                         .HasColumnType("timestamptz");
 
@@ -478,6 +579,46 @@ namespace StepIn.Infrastructure.Migrations
                     b.HasIndex("Status", "PublishedAt");
 
                     b.ToTable("AidxProjects", "aidx");
+                });
+
+            modelBuilder.Entity("StepIn.Domain.Aidx.AidxProjectMilestone", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateOnly?>("CompletedDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(5000)
+                        .HasColumnType("character varying(5000)");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<DateOnly?>("TargetDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId");
+
+                    b.ToTable("AidxProjectMilestones", "aidx");
                 });
 
             modelBuilder.Entity("StepIn.Domain.Aidx.AidxProjectResearchArea", b =>
@@ -800,6 +941,37 @@ namespace StepIn.Infrastructure.Migrations
                         .HasFilter("\"UserId\" IS NOT NULL");
 
                     b.ToTable("AidxResearchers", "aidx");
+                });
+
+            modelBuilder.Entity("StepIn.Domain.Aidx.AidxSavedItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ContentId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamptz");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "ContentType", "ContentId")
+                        .IsUnique();
+
+                    b.ToTable("AidxSavedItems", "aidx");
                 });
 
             modelBuilder.Entity("StepIn.Domain.Applications.JobApplication", b =>
@@ -1650,6 +1822,15 @@ namespace StepIn.Infrastructure.Migrations
                     b.ToTable("Users", "stepin");
                 });
 
+            modelBuilder.Entity("StepIn.Domain.Aidx.AidxCollaborationEnquiry", b =>
+                {
+                    b.HasOne("StepIn.Domain.Aidx.AidxProject", null)
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("StepIn.Domain.Aidx.AidxContentSnapshot", b =>
                 {
                     b.HasOne("StepIn.Domain.Aidx.AidxMembership", null)
@@ -1687,6 +1868,20 @@ namespace StepIn.Infrastructure.Migrations
                     b.HasOne("StepIn.Domain.Aidx.AidxEvent", null)
                         .WithMany()
                         .HasForeignKey("RevisionOfId")
+                        .OnDelete(DeleteBehavior.Cascade);
+                });
+
+            modelBuilder.Entity("StepIn.Domain.Aidx.AidxEventRegistration", b =>
+                {
+                    b.HasOne("StepIn.Domain.Aidx.AidxEvent", null)
+                        .WithMany()
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("StepIn.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade);
                 });
 
@@ -1754,6 +1949,15 @@ namespace StepIn.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("RevisionOfId")
                         .OnDelete(DeleteBehavior.Cascade);
+                });
+
+            modelBuilder.Entity("StepIn.Domain.Aidx.AidxProjectMilestone", b =>
+                {
+                    b.HasOne("StepIn.Domain.Aidx.AidxProject", null)
+                        .WithMany("Milestones")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("StepIn.Domain.Aidx.AidxProjectResearchArea", b =>
@@ -1868,6 +2072,15 @@ namespace StepIn.Infrastructure.Migrations
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.SetNull);
+                });
+
+            modelBuilder.Entity("StepIn.Domain.Aidx.AidxSavedItem", b =>
+                {
+                    b.HasOne("StepIn.Domain.Users.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("StepIn.Domain.Applications.JobApplication", b =>
@@ -2029,6 +2242,8 @@ namespace StepIn.Infrastructure.Migrations
 
             modelBuilder.Entity("StepIn.Domain.Aidx.AidxProject", b =>
                 {
+                    b.Navigation("Milestones");
+
                     b.Navigation("ResearchAreas");
 
                     b.Navigation("Researchers");

@@ -335,7 +335,7 @@ public static class AidxWorkflowEndpoints
                 AidxProject p => editing.ArchiveAsync(p, version, AidxContentType.Project, uid, mid, ct),
                 AidxNews n => editing.ArchiveAsync(n, version, AidxContentType.News, uid, mid, ct),
                 AidxEvent e => editing.ArchiveAsync(e, version, AidxContentType.Event, uid, mid, ct),
-                AidxPublication pub => editing.ArchiveAsync(pub, version, AidxContentType.Publication, uid, mid, ct),
+                AidxPublication pub => editing.ArchiveAsync(pub, version, AidxContentType.Publication, uid, mid, ct, onArchive: p => p.Published = false),
                 _ => Task.FromResult(AidxEditOutcome.Forbidden),
             },
             cancellationToken);
@@ -388,7 +388,7 @@ public static class AidxWorkflowEndpoints
             case AidxContentType.Publication:
                 var pub = (AidxPublication)content;
                 var pubCanonical = pub.RevisionOfId is { } pubcid ? await db.AidxPublications.Include(x => x.Authors).Include(x => x.ResearchAreas).Include(x => x.Projects).FirstOrDefaultAsync(x => x.Id == pubcid, cancellationToken) : null;
-                outcome = await editing.ApproveAsync(pub, pubCanonical, request.ExpectedVersion, type, CopyPublicationFields, user!.Id, membership?.Id, cancellationToken);
+                outcome = await editing.ApproveAsync(pub, pubCanonical, request.ExpectedVersion, type, CopyPublicationFields, user!.Id, membership?.Id, cancellationToken, onFirstPublish: p => p.Published = true);
                 break;
             default:
                 return Results.NotFound();

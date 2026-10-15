@@ -31,6 +31,7 @@ public static class AidxPublicEndpoints
         aidx.MapGet("/news/{slug}", GetNewsAsync).WithName("GetAidxNews").WithSummary("One published news item.");
         aidx.MapGet("/events", ListEventsAsync).WithName("ListAidxEvents").WithSummary("Published events.");
         aidx.MapGet("/events/{slug}", GetEventAsync).WithName("GetAidxEvent").WithSummary("One published event.");
+        aidx.MapGet("/events/{slug}/calendar.ics", GetEventIcsAsync).WithName("GetAidxEventIcs").WithSummary("One published event as an RFC 5545 .ics download.");
         aidx.MapGet("/opportunities", ListOpportunitiesAsync).WithName("ListAidxOpportunities").WithSummary("Published research opportunities (StepIn jobs with Category = Research).");
 
         return app;
@@ -92,7 +93,11 @@ public static class AidxPublicEndpoints
         var query = db.AidxProjects
             .AsNoTracking()
             .Include(p => p.ResearchAreas).ThenInclude(r => r.ResearchArea)
-            .Where(p => p.Status == AidxContentStatus.Published);
+            // RevisionOfId must be excluded explicitly — a merged revision also ends up
+            // Status == Published, with the same Slug as its canonical row, and would otherwise
+            // leak into or non-deterministically win this query (see Milestone 2's revision
+            // design: canonical and revision rows coexist, only the canonical is ever public).
+            .Where(p => p.Status == AidxContentStatus.Published && p.RevisionOfId == null);
 
         if (!string.IsNullOrWhiteSpace(area))
         {
@@ -125,7 +130,7 @@ public static class AidxPublicEndpoints
             .Include(p => p.ResearchAreas).ThenInclude(r => r.ResearchArea)
             .Include(p => p.Technologies)
             .Include(p => p.Researchers).ThenInclude(r => r.Researcher)
-            .FirstOrDefaultAsync(p => p.Slug == slug && p.Status == AidxContentStatus.Published, cancellationToken);
+            .FirstOrDefaultAsync(p => p.Slug == slug && p.Status == AidxContentStatus.Published && p.RevisionOfId == null, cancellationToken);
 
         if (project is null)
         {
@@ -226,7 +231,14 @@ public static class AidxPublicEndpoints
         var query = db.AidxPublications
             .AsNoTracking()
             .Include(p => p.Authors).ThenInclude(a => a.Researcher)
-            .Where(p => p.Published);
+            // Reads the legacy Published bool, not Status: the old AidxAdminEndpoints
+            // create/publish handlers (not yet routed through the new workflow engine — see
+            // Milestone 2/3's explicitly-flagged deferred item) only ever set Published, never
+            // Status, which would otherwise default to Draft and make admin-published papers
+            // publicly invisible. The new workflow engine dual-writes Published alongside
+            // Status specifically so this bool stays authoritative from either path. RevisionOfId
+            // exclusion is required regardless of which status field is read.
+            .Where(p => p.Published && p.RevisionOfId == null);
 
         if (year is { } filterYear)
         {
@@ -265,7 +277,7 @@ public static class AidxPublicEndpoints
             .Include(p => p.Authors).ThenInclude(a => a.Researcher)
             .Include(p => p.ResearchAreas).ThenInclude(r => r.ResearchArea)
             .Include(p => p.Projects).ThenInclude(p => p.Project)
-            .FirstOrDefaultAsync(p => p.Id == id && p.Published, cancellationToken);
+            .FirstOrDefaultAsync(p => p.Id == id && p.Published && p.RevisionOfId == null, cancellationToken);
 
         return publication is null ? Results.NotFound() : Results.Ok(ToPublicationDetailResponse(publication));
     }
@@ -280,7 +292,7 @@ public static class AidxPublicEndpoints
 
         var query = db.AidxNews
             .AsNoTracking()
-            .Where(n => n.Status == AidxContentStatus.Published)
+            .Where(n => n.Status == AidxContentStatus.Published && n.RevisionOfId == null)
             .OrderByDescending(n => n.PublishedAt)
             .ThenBy(n => n.Slug)
             .Select(n => new AidxNewsSummaryResponse(n.Id, n.Slug, n.Title, n.Summary, n.PublishedAt));
@@ -294,7 +306,7 @@ public static class AidxPublicEndpoints
     {
         var news = await db.AidxNews
             .AsNoTracking()
-            .Where(n => n.Slug == slug && n.Status == AidxContentStatus.Published)
+            .Where(n => n.Slug == slug && n.Status == AidxContentStatus.Published && n.RevisionOfId == null)
             .Select(n => new AidxNewsDetailResponse(n.Id, n.Slug, n.Title, n.Summary, n.Body, n.PublishedAt))
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -317,7 +329,7 @@ public static class AidxPublicEndpoints
 
         var query = db.AidxEvents
             .AsNoTracking()
-            .Where(e => e.Status == AidxContentStatus.Published);
+            .Where(e => e.Status == AidxContentStatus.Published && e.RevisionOfId == null);
 
         if (upcoming == true)
         {
@@ -337,11 +349,37 @@ public static class AidxPublicEndpoints
     {
         var evt = await db.AidxEvents
             .AsNoTracking()
-            .Where(e => e.Slug == slug && e.Status == AidxContentStatus.Published)
+            .Where(e => e.Slug == slug && e.Status == AidxContentStatus.Published && e.RevisionOfId == null)
             .Select(e => new AidxEventResponse(e.Id, e.Slug, e.Title, e.Description, e.StartsAt, e.EndsAt, e.Location, e.RegistrationUrl, e.SpeakerName))
             .FirstOrDefaultAsync(cancellationToken);
 
         return evt is null ? Results.NotFound() : Results.Ok(evt);
+    }
+
+    private static async Task<IResult> GetEventIcsAsync(
+        string slug, IApplicationDbContext db, IDateTimeProvider clock, CancellationToken cancellationToken)
+    {
+        var evt = await db.AidxEvents
+            .AsNoTracking()
+            .Where(e => e.Slug == slug && e.Status == AidxContentStatus.Published && e.RevisionOfId == null)
+            .Select(e => new { e.Id, e.Title, e.Description, e.StartsAt, e.EndsAt, e.Location })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (evt is null)
+        {
+            return Results.NotFound();
+        }
+
+        var ics = IcsCalendarWriter.WriteEvent(
+            uid: $"aidx-event-{evt.Id}@stepin",
+            title: evt.Title,
+            description: evt.Description,
+            startsAt: evt.StartsAt,
+            endsAt: evt.EndsAt,
+            location: evt.Location,
+            stampedAt: clock.UtcNow);
+
+        return Results.Text(ics, "text/calendar", System.Text.Encoding.UTF8);
     }
 
     /// <summary>

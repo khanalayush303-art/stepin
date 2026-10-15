@@ -186,7 +186,7 @@ export default async function AidxHomePage() {
             <ul className="grid gap-4 md:grid-cols-3">
               {publications.data.items.map((pub) => (
                 <li key={pub.id}>
-                  <LinkCard href="/aidx/publications" title={pub.title} description={pub.authors.join(", ")} meta={`${pub.year} · ${labels.publication(pub.publicationType)}`} icon={AIDX_ICONS.publications} />
+                  <LinkCard href={`/aidx/publications/${pub.id}`} title={pub.title} description={pub.authors.join(", ")} meta={`${pub.year} · ${labels.publication(pub.publicationType)}`} icon={AIDX_ICONS.publications} />
                 </li>
               ))}
             </ul>

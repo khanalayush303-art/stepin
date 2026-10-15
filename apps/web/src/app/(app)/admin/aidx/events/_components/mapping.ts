@@ -32,7 +32,10 @@ export function fromDetail(detail: AdminEventDetail): EventFormValue {
  * Form value to request body. Returns the field errors to show when the start is missing or unreadable,
  * so the form never sends an event without a start time.
  */
-export function toInput(value: EventFormValue): { input: EventInput; errors: Record<string, string[]> } {
+export function toInput(
+  value: EventFormValue,
+  expectedVersion: string | null
+): { input: EventInput; errors: Record<string, string[]> } {
   const errors: Record<string, string[]> = {};
   const startsAt = toIsoFromLocal(value.startsLocal);
   if (!startsAt) {
@@ -54,6 +57,7 @@ export function toInput(value: EventFormValue): { input: EventInput; errors: Rec
       location: value.location,
       registrationUrl: value.registrationUrl,
       speakerName: value.speakerName,
+      expectedVersion,
     },
     errors,
   };

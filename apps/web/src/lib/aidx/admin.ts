@@ -118,6 +118,10 @@ export type AdminOpportunityError =
   | { kind: "forbidden"; message: string }
   | { kind: "not-found"; message: string }
   | { kind: "validation"; message: string; fields: Record<string, string[]> }
+  /** 409: someone else changed this since the form loaded it. The typed form content is never
+   * cleared when this happens — only an explicit "Reload latest version" action (wired by the
+   * page, not this module) replaces it, so a conflict never silently discards what was entered. */
+  | { kind: "conflict"; message: string }
   | { kind: "unavailable"; message: string }
   | { kind: "server"; message: string };
 
@@ -125,6 +129,7 @@ const MESSAGES = {
   unauthenticated: "Your session has expired. Sign in again to continue.",
   forbidden: "You do not have permission to manage AIDX Lab research opportunities.",
   notFound: "This research opportunity could not be found.",
+  conflict: "This was edited elsewhere since you loaded it. Your changes here have not been lost — reload to see the latest version, then re-apply or re-check your edits before saving again.",
   unavailable: "The AIDX system owner is unavailable. Ask an administrator to check its setup.",
   server: "Something went wrong on our side. Try again in a moment.",
   network: "We couldn't reach the server. Check your connection and try again.",
@@ -157,7 +162,7 @@ export function describeAdminError(error: unknown): AdminOpportunityError {
       };
     }
     case 409:
-      return { kind: "validation", message: error.problem.detail ?? error.problem.title ?? "This change conflicts with the current state.", fields: {} };
+      return { kind: "conflict", message: MESSAGES.conflict };
     case 503:
       return { kind: "unavailable", message: MESSAGES.unavailable };
     default:

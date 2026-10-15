@@ -22,7 +22,7 @@ export default function NewAidxEventPage() {
   const [localErrors, setLocalErrors] = React.useState<Record<string, string[]>>({});
 
   async function onSave() {
-    const prepared = toInput(value);
+    const prepared = toInput(value, null);
     setLocalErrors(prepared.errors);
     if (Object.keys(prepared.errors).length > 0) return;
 

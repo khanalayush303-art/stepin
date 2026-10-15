@@ -11,7 +11,6 @@ export function emptyPublication(): PublicationFormValue {
     year: new Date().getFullYear(),
     doi: null,
     externalUrl: null,
-    published: false,
     authors: [],
     researchAreaIds: [],
     projectIds: [],
@@ -28,7 +27,6 @@ export function fromDetail(detail: AdminPublicationDetail): PublicationFormValue
     year: detail.year,
     doi: detail.doi,
     externalUrl: detail.externalUrl,
-    published: detail.published,
     authors: detail.authors.map((a) => ({
       key: newAuthorKey(),
       researcherId: a.researcherId,
@@ -42,7 +40,7 @@ export function fromDetail(detail: AdminPublicationDetail): PublicationFormValue
 }
 
 /** Form value to the request body. Relationships are sent as complete, ordered sets. */
-export function toInput(value: PublicationFormValue): PublicationInput {
+export function toInput(value: PublicationFormValue, expectedVersion: string | null): PublicationInput {
   return {
     title: value.title,
     abstract: value.abstract,
@@ -51,10 +49,10 @@ export function toInput(value: PublicationFormValue): PublicationInput {
     year: value.year,
     doi: value.doi,
     externalUrl: value.externalUrl,
-    published: value.published,
     authors: value.authors.map((a) => ({ researcherId: a.researcherId, externalAuthorName: a.externalAuthorName })),
     researchAreaIds: value.researchAreaIds,
     projectIds: value.projectIds,
+    expectedVersion,
   };
 }
 

@@ -10,13 +10,16 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AidxImageUpload } from "@/components/aidx/aidx-image-upload";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { describeAdminError, type AdminOpportunityError } from "@/lib/aidx/admin";
 import { labels } from "@/lib/aidx/format";
 import {
   deleteAdminPerson,
   getAdminPerson,
+  personImageUrl,
   updateAdminPerson,
+  uploadAdminPersonImage,
   type AdminPersonDetail,
   type PersonInput,
 } from "@/lib/aidx/people-cms";
@@ -174,6 +177,18 @@ export default function EditAidxPersonPage() {
                 {saveError.message}
               </Alert>
             ) : null}
+
+            <AidxImageUpload
+              imageUrl={loaded.hasImage ? personImageUrl(loaded.id, reloadKey) : null}
+              currentAltText={loaded.imageAltText}
+              disabled={saving || deleting}
+              helpText="Shown on this researcher's public profile."
+              onUpload={async (file, altText) => {
+                const token = await getToken();
+                await uploadAdminPersonImage(token, id, file, altText);
+                setReloadKey((key) => key + 1);
+              }}
+            />
 
             <Card className="space-y-3 p-5">
               <h2 className="text-h4 text-foreground">Projects</h2>

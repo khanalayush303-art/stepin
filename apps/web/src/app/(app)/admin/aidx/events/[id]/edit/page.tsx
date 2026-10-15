@@ -10,15 +10,18 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AidxImageUpload } from "@/components/aidx/aidx-image-upload";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { describeAdminError, type AdminOpportunityError } from "@/lib/aidx/admin";
 import { formatDateTime } from "@/lib/aidx/format";
 import {
   archiveAdminEvent,
   deleteAdminEvent,
+  eventImageUrl,
   getAdminEvent,
   publishAdminEvent,
   updateAdminEvent,
+  uploadAdminEventImage,
   type AdminEventDetail,
 } from "@/lib/aidx/events-cms";
 import { ADMIN_NAV } from "../../../../_nav";
@@ -72,7 +75,7 @@ export default function EditAidxEventPage() {
 
   async function onSave() {
     if (!value) return;
-    const prepared = toInput(value);
+    const prepared = toInput(value, item?.version ?? null);
     setLocalErrors(prepared.errors);
     if (Object.keys(prepared.errors).length > 0) return;
 
@@ -81,8 +84,12 @@ export default function EditAidxEventPage() {
     setNotice(null);
     try {
       const token = await getToken();
-      await updateAdminEvent(token, id, prepared.input);
-      setNotice("Changes saved.");
+      const result = await updateAdminEvent(token, id, prepared.input);
+      setNotice(
+        result.revisionOfId
+          ? "Saved as a pending revision. The published event is unchanged until this revision is reviewed and approved."
+          : "Changes saved."
+      );
       setReloadKey((key) => key + 1);
     } catch (caught) {
       setSaveError(describeAdminError(caught));
@@ -103,10 +110,10 @@ export default function EditAidxEventPage() {
         return;
       }
       if (kind === "publish") {
-        await publishAdminEvent(token, id);
+        await publishAdminEvent(token, id, item?.version ?? null);
         setNotice("Published. The event is now on the public events page.");
       } else {
-        await archiveAdminEvent(token, id);
+        await archiveAdminEvent(token, id, item?.version ?? null);
         setNotice("Archived. The event is no longer public.");
       }
       setPending(null);
@@ -189,7 +196,21 @@ export default function EditAidxEventPage() {
               </Alert>
             ) : null}
 
-            {saveError ? (
+            {saveError?.kind === "conflict" ? (
+              <Alert tone="warning" title="This was edited elsewhere">
+                <p>
+                  Someone else changed this event after you loaded it, so your save was refused rather than silently
+                  overwriting their edit. Nothing has been saved and the form below still shows exactly what you typed.
+                </p>
+                <p className="mt-2 text-small text-muted-foreground">
+                  Reloading replaces the form with the current server content, discarding what you typed here. Copy
+                  anything you want to keep first.
+                </p>
+                <Button variant="outline" className="mt-3" onClick={() => setReloadKey((key) => key + 1)}>
+                  Discard my edits and reload the latest version
+                </Button>
+              </Alert>
+            ) : saveError ? (
               <Alert tone="error" title={saveError.kind === "validation" ? "Check the form" : "Couldn't complete that change"}>
                 {saveError.message}
               </Alert>
@@ -228,6 +249,22 @@ export default function EditAidxEventPage() {
                 </p>
               ) : null}
             </Card>
+
+            <AidxImageUpload
+              imageUrl={item.hasImage ? eventImageUrl(item.id, reloadKey) : null}
+              currentAltText={item.imageAltText}
+              disabled={saving || actionBusy}
+              helpText={
+                status === "Published"
+                  ? "This event is published, so a new image opens a pending revision — it replaces the live image only once that revision is approved."
+                  : "Shown on this event's public page."
+              }
+              onUpload={async (file, altText) => {
+                const token = await getToken();
+                await uploadAdminEventImage(token, id, file, altText);
+                setReloadKey((key) => key + 1);
+              }}
+            />
 
             <form
               onSubmit={(event) => {

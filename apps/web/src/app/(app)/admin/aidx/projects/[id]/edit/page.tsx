@@ -44,6 +44,9 @@ function toInput(project: AdminProjectDetail): ProjectInput {
     technologies: project.technologies,
     // Carried through so a save never drops team links that this form does not edit yet.
     researchers: project.researchers.map((r) => ({ researcherId: r.researcherId, role: r.role })),
+    outcomes: project.outcomes,
+    milestones: project.milestones,
+    expectedVersion: project.version,
   };
 }
 
@@ -98,8 +101,12 @@ export default function EditAidxProjectPage() {
     setNotice(null);
     try {
       const token = await getToken();
-      await updateAdminProject(token, id, value);
-      setNotice("Changes saved.");
+      const result = await updateAdminProject(token, id, value);
+      setNotice(
+        result.revisionOfId
+          ? "Saved as a pending revision. The published project is unchanged until this revision is reviewed and approved."
+          : "Changes saved."
+      );
       setReloadKey((key) => key + 1);
     } catch (caught) {
       setSaveError(describeAdminError(caught));
@@ -115,10 +122,10 @@ export default function EditAidxProjectPage() {
     try {
       const token = await getToken();
       if (kind === "publish") {
-        await publishAdminProject(token, id);
+        await publishAdminProject(token, id, loaded?.version ?? null);
         setNotice("Published. It is now visible on the AIDX projects page.");
       } else {
-        await archiveAdminProject(token, id);
+        await archiveAdminProject(token, id, loaded?.version ?? null);
         setNotice("Archived. It is no longer public.");
       }
       setPending(null);
@@ -192,7 +199,23 @@ export default function EditAidxProjectPage() {
               </Alert>
             ) : null}
 
-            {saveError ? (
+            {saveError?.kind === "conflict" ? (
+              <Alert tone="warning" title="This was edited elsewhere">
+                <p>
+                  Someone else changed this project after you loaded it, so your save was refused rather than
+                  silently overwriting their edit. Nothing has been saved and the form below still shows exactly
+                  what you typed — it is safe to copy anything you want to keep before deciding what to do next.
+                </p>
+                <p className="mt-2 text-small text-muted-foreground">
+                  Reloading replaces the form with the current server content, discarding what you typed here. If
+                  you want to keep your own edits, copy them somewhere first, then reload, then re-apply them on
+                  top of the latest version before saving again.
+                </p>
+                <Button variant="outline" className="mt-3" onClick={() => setReloadKey((key) => key + 1)}>
+                  Discard my edits and reload the latest version
+                </Button>
+              </Alert>
+            ) : saveError ? (
               <Alert tone="error" title={saveError.kind === "validation" ? "Check the form" : "Couldn't complete that change"}>
                 {saveError.message}
               </Alert>

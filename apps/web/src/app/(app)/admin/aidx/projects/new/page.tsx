@@ -25,6 +25,9 @@ const EMPTY: ProjectInput = {
   researchAreaIds: [],
   technologies: [],
   researchers: [],
+  outcomes: null,
+  milestones: [],
+  expectedVersion: null,
 };
 
 export default function NewAidxProjectPage() {

@@ -13,7 +13,7 @@ import { listAdminPeople, type AdminPersonSummary } from "@/lib/aidx/people-cms"
 import { ADMIN_NAV } from "../../../_nav";
 import { NewsForm } from "../_components/news-form";
 
-const EMPTY: NewsInput = { title: "", slug: null, summary: "", body: "", authorResearcherId: null };
+const EMPTY: NewsInput = { title: "", slug: null, summary: "", body: "", authorResearcherId: null, expectedVersion: null };
 
 export default function NewAidxNewsPage() {
   const router = useRouter();

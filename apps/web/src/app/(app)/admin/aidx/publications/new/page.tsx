@@ -51,7 +51,7 @@ export default function NewPublicationPage() {
     setError(null);
     try {
       const token = await getToken();
-      const created = await createAdminPublication(token, toInput(value));
+      const created = await createAdminPublication(token, toInput(value, null));
       router.push(`/admin/aidx/publications/${created.id}/edit`);
     } catch (caught) {
       // Values stay in the form, so a validation error does not cost the admin their work.
@@ -75,7 +75,7 @@ export default function NewPublicationPage() {
 
         <div className="space-y-1">
           <h1 className="text-h2 text-foreground">Add publication</h1>
-          <p className="text-body text-muted-foreground">New publications start hidden. Turn on the public toggle when they are ready.</p>
+          <p className="text-body text-muted-foreground">New publications start as a Draft. Publish them from the edit page when ready.</p>
         </div>
 
         {error ? (

@@ -1,5 +1,6 @@
 import { apiClient } from "@/lib/auth/client";
 import type { PageResult, ResearchArea } from "./types";
+import type { AidxWorkflowStatus } from "./workflow-status";
 
 /**
  * Admin CMS client for AIDX research areas and projects (Phase 4.4E.1).
@@ -9,7 +10,7 @@ import type { PageResult, ResearchArea } from "./types";
  * authoritative for slugs, relationships and publication. The payloads below carry content fields only.
  */
 
-export type AidxProjectStatus = "Draft" | "Published" | "Archived";
+export type AidxProjectStatus = AidxWorkflowStatus;
 
 // ---- Research areas ----------------------------------------------------------
 
@@ -78,6 +79,13 @@ export interface AdminProjectResearcher {
   role: string | null;
 }
 
+export interface ProjectMilestone {
+  title: string;
+  description: string | null;
+  targetDate: string | null;
+  completedDate: string | null;
+}
+
 export interface AdminProjectDetail {
   id: string;
   title: string;
@@ -93,6 +101,20 @@ export interface AdminProjectDetail {
   researchAreaIds: string[];
   technologies: string[];
   researchers: AdminProjectResearcher[];
+  outcomes: string | null;
+  milestones: ProjectMilestone[];
+  /** The optimistic-concurrency token. Sent back as expectedVersion on the next write. */
+  version: string | null;
+}
+
+/** A write's result. revisionOfId non-null means the write landed on a pending revision, not the
+ * live canonical row — the public page is unchanged until that revision is approved. */
+export interface AidxWriteResult {
+  id: string;
+  slug: string | null;
+  status: string | null;
+  version: string | null;
+  revisionOfId: string | null;
 }
 
 export interface ProjectFilters {
@@ -120,6 +142,13 @@ export interface ProjectInput {
    * and the backend replaces them from the request, so omitting them would drop them.
    */
   researchers: { researcherId: string; role: string | null }[];
+  outcomes: string | null;
+  /** The complete ordered list, sent in full on every save — there is no per-milestone id to
+   * diff against, so the backend replaces its stored set wholesale with whatever is sent here. */
+  milestones: ProjectMilestone[];
+  /** The version last loaded from the server. Sent on every update/publish/archive so a stale
+   * write is rejected (409) instead of silently overwriting someone else's change. */
+  expectedVersion: string | null;
 }
 
 export function listAdminProjects(token: string | null, filters: ProjectFilters = {}) {
@@ -138,19 +167,19 @@ export function getAdminProject(token: string | null, id: string) {
 }
 
 export function createAdminProject(token: string | null, input: ProjectInput) {
-  return apiClient.post<{ id: string; slug: string; status: string }>("/api/v1/admin/aidx/projects", token, toProjectPayload(input));
+  return apiClient.post<AidxWriteResult>("/api/v1/admin/aidx/projects", token, toProjectPayload(input));
 }
 
 export function updateAdminProject(token: string | null, id: string, input: ProjectInput) {
-  return apiClient.put<{ id: string; slug: string; status: string }>(`/api/v1/admin/aidx/projects/${id}`, token, toProjectPayload(input));
+  return apiClient.put<AidxWriteResult>(`/api/v1/admin/aidx/projects/${id}`, token, toProjectPayload(input));
 }
 
-export function publishAdminProject(token: string | null, id: string) {
-  return apiClient.post<{ id: string; slug: string; status: string }>(`/api/v1/admin/aidx/projects/${id}/publish`, token);
+export function publishAdminProject(token: string | null, id: string, expectedVersion: string | null) {
+  return apiClient.post<AidxWriteResult>(`/api/v1/admin/aidx/projects/${id}/publish`, token, { expectedVersion });
 }
 
-export function archiveAdminProject(token: string | null, id: string) {
-  return apiClient.post<{ id: string; slug: string; status: string }>(`/api/v1/admin/aidx/projects/${id}/archive`, token);
+export function archiveAdminProject(token: string | null, id: string, expectedVersion: string | null) {
+  return apiClient.post<AidxWriteResult>(`/api/v1/admin/aidx/projects/${id}/archive`, token, { expectedVersion });
 }
 
 function toProjectPayload(input: ProjectInput) {
@@ -166,5 +195,13 @@ function toProjectPayload(input: ProjectInput) {
     researchAreaIds: input.researchAreaIds,
     technologies: input.technologies,
     researchers: input.researchers.map((r) => ({ researcherId: r.researcherId, role: r.role })),
+    outcomes: input.outcomes,
+    milestones: input.milestones.map((m) => ({
+      title: m.title,
+      description: m.description,
+      targetDate: m.targetDate,
+      completedDate: m.completedDate,
+    })),
+    expectedVersion: input.expectedVersion,
   };
 }

@@ -1,5 +1,7 @@
 import { apiClient } from "@/lib/auth/client";
+import type { AidxWriteResult } from "./cms";
 import type { PageResult } from "./types";
+import type { AidxWorkflowStatus } from "./workflow-status";
 
 /**
  * Admin CMS client for AIDX events (Phase 4.4E.5).
@@ -9,7 +11,7 @@ import type { PageResult } from "./types";
  * timestamps are changed only through the lifecycle endpoints, never through the body.
  */
 
-export type AidxEventStatus = "Draft" | "Published" | "Archived";
+export type AidxEventStatus = AidxWorkflowStatus;
 
 export interface AdminEventSummary {
   id: string;
@@ -35,6 +37,9 @@ export interface AdminEventDetail {
   speakerName: string | null;
   createdAt: string;
   updatedAt: string | null;
+  version: string | null;
+  hasImage: boolean;
+  imageAltText: string | null;
 }
 
 export interface EventInput {
@@ -46,6 +51,7 @@ export interface EventInput {
   location: string | null;
   registrationUrl: string | null;
   speakerName: string | null;
+  expectedVersion: string | null;
 }
 
 export interface EventFilters {
@@ -73,23 +79,39 @@ export function getAdminEvent(token: string | null, id: string) {
 }
 
 export function createAdminEvent(token: string | null, input: EventInput) {
-  return apiClient.post<{ id: string; slug: string; status: AidxEventStatus }>(BASE, token, toPayload(input));
+  return apiClient.post<AidxWriteResult>(BASE, token, toPayload(input));
 }
 
 export function updateAdminEvent(token: string | null, id: string, input: EventInput) {
-  return apiClient.put<{ id: string; slug: string; status: AidxEventStatus }>(`${BASE}/${id}`, token, toPayload(input));
+  return apiClient.put<AidxWriteResult>(`${BASE}/${id}`, token, toPayload(input));
 }
 
-export function publishAdminEvent(token: string | null, id: string) {
-  return apiClient.post<{ id: string; slug: string; status: AidxEventStatus }>(`${BASE}/${id}/publish`, token);
+export function publishAdminEvent(token: string | null, id: string, expectedVersion: string | null) {
+  return apiClient.post<AidxWriteResult>(`${BASE}/${id}/publish`, token, { expectedVersion });
 }
 
-export function archiveAdminEvent(token: string | null, id: string) {
-  return apiClient.post<{ id: string; slug: string; status: AidxEventStatus }>(`${BASE}/${id}/archive`, token);
+export function archiveAdminEvent(token: string | null, id: string, expectedVersion: string | null) {
+  return apiClient.post<AidxWriteResult>(`${BASE}/${id}/archive`, token, { expectedVersion });
 }
 
 export function deleteAdminEvent(token: string | null, id: string) {
   return apiClient.delete(`${BASE}/${id}`, token);
+}
+
+/**
+ * Editing an already-published event opens a pending revision, same as any other field edit — the
+ * uploaded image does not replace the live one until that revision is approved.
+ */
+export function uploadAdminEventImage(token: string | null, id: string, file: File, altText: string) {
+  const form = new FormData();
+  form.set("file", file);
+  form.set("altText", altText);
+  return apiClient.postForm<{ storageKey: string }>(`/api/v1/aidx/authoring/events/${id}/image`, token, form);
+}
+
+export function eventImageUrl(id: string, cacheBust?: number) {
+  const suffix = cacheBust ? `?v=${cacheBust}` : "";
+  return `/api/v1/aidx/media/events/${id}/image${suffix}`;
 }
 
 /** Content and schedule fields only. Status, timestamps and storage keys are never sent. */
@@ -103,6 +125,7 @@ function toPayload(input: EventInput) {
     location: input.location,
     registrationUrl: input.registrationUrl,
     speakerName: input.speakerName,
+    expectedVersion: input.expectedVersion,
   };
 }
 

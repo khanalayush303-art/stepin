@@ -20,7 +20,6 @@ export interface PublicationFormValue {
   year: number;
   doi: string | null;
   externalUrl: string | null;
-  published: boolean;
   authors: AuthorDraft[];
   researchAreaIds: string[];
   projectIds: string[];
@@ -189,28 +188,6 @@ export function PublicationForm({
             </p>
           ) : null}
         </fieldset>
-      </Card>
-
-      <Card className="p-6">
-        <div className="flex items-start gap-3">
-          <Checkbox
-            id="published"
-            checked={value.published}
-            onCheckedChange={(checked) => onChange({ ...value, published: checked === true })}
-            disabled={disabled}
-            className="mt-0.5"
-          />
-          <div className="space-y-1">
-            <label htmlFor="published" className="text-small font-medium text-foreground">
-              Show on the public publications page
-            </label>
-            <p className="text-small text-muted-foreground">
-              {value.published
-                ? "Visible: this publication is listed on /aidx/publications."
-                : "Hidden: the publication is kept in the CMS only and is not listed publicly."}
-            </p>
-          </div>
-        </div>
       </Card>
     </div>
   );

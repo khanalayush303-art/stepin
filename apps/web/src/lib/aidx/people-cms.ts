@@ -45,6 +45,8 @@ export interface AdminPersonDetail {
   published: boolean;
   projects: AdminPersonProject[];
   publications: AdminPersonPublication[];
+  hasImage: boolean;
+  imageAltText: string | null;
 }
 
 export interface PersonInput {
@@ -94,6 +96,20 @@ export function updateAdminPerson(token: string | null, id: string, input: Perso
 
 export function deleteAdminPerson(token: string | null, id: string) {
   return apiClient.delete(`${BASE}/${id}`, token);
+}
+
+/** Returns the new storage key (unused by the caller — the image is re-fetched by convention URL). */
+export function uploadAdminPersonImage(token: string | null, id: string, file: File, altText: string) {
+  const form = new FormData();
+  form.set("file", file);
+  form.set("altText", altText);
+  return apiClient.postForm<{ storageKey: string }>(`${BASE}/${id}/image`, token, form);
+}
+
+/** The person's profile photo, when one has been uploaded. Cache-busted so a replacement shows immediately. */
+export function personImageUrl(id: string, cacheBust?: number) {
+  const suffix = cacheBust ? `?v=${cacheBust}` : "";
+  return `/api/v1/aidx/media/people/${id}/image${suffix}`;
 }
 
 /** Content fields only. No account, owner or storage fields can be sent from here. */

@@ -81,11 +81,14 @@ export default function AdminAidxProjectsPage() {
     try {
       const token = await getToken();
       const project = pending.project;
+      // The list's own summary row carries no version token (only the edit page's detail load
+      // does), so this quick action is not concurrency-checked — a deliberate, narrow scope
+      // boundary: the edit page is where careful, conflict-protected editing happens.
       if (pending.kind === "publish") {
-        await publishAdminProject(token, project.id);
+        await publishAdminProject(token, project.id, null);
         setNotice(`"${project.title}" is published and visible on the AIDX projects page.`);
       } else {
-        await archiveAdminProject(token, project.id);
+        await archiveAdminProject(token, project.id, null);
         setNotice(`"${project.title}" is archived and no longer public.`);
       }
       setPending(null);

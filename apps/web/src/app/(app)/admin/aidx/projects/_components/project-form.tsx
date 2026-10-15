@@ -1,13 +1,19 @@
 "use client";
 
+import { Plus, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import type { ProjectInput } from "@/lib/aidx/cms";
+import type { ProjectInput, ProjectMilestone } from "@/lib/aidx/cms";
 import type { ResearchArea } from "@/lib/aidx/types";
 import { ResearchAreaPicker } from "./research-area-picker";
+
+function emptyMilestone(): ProjectMilestone {
+  return { title: "", description: null, targetDate: null, completedDate: null };
+}
 
 /**
  * Project fields. The slug is optional, and the backend derives it from the title when it is left
@@ -121,6 +127,17 @@ export function ProjectForm({
             Feature this project on the AIDX landing page
           </label>
         </div>
+        <FormField id="outcomes" label="Outcomes" hint="Optional. Results or impact, shown on the project's public page." error={fieldErrors.outcomes?.[0]}>
+          {(props) => (
+            <Textarea
+              {...props}
+              value={value.outcomes ?? ""}
+              onChange={(event) => onChange({ ...value, outcomes: event.target.value.trim() || null })}
+              rows={4}
+              disabled={disabled}
+            />
+          )}
+        </FormField>
       </Card>
 
       <Card className="space-y-4 p-6">
@@ -163,6 +180,135 @@ export function ProjectForm({
           Team links are kept when you save. Adding or removing team members is part of the researcher CMS, which comes
           in a later phase.
         </p>
+      </Card>
+
+      <Card className="space-y-4 p-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-h4 text-foreground">Milestones</h2>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={disabled}
+            onClick={() => onChange({ ...value, milestones: [...value.milestones, emptyMilestone()] })}
+          >
+            <Plus aria-hidden="true" className="size-4" />
+            Add milestone
+          </Button>
+        </div>
+        {fieldErrors.milestones?.[0] ? <p className="text-caption text-error">{fieldErrors.milestones[0]}</p> : null}
+        {value.milestones.length === 0 ? (
+          <p className="text-small text-muted-foreground">No milestones yet. Shown on the project&rsquo;s public page, in order.</p>
+        ) : (
+          <ul className="space-y-4">
+            {value.milestones.map((milestone, index) => (
+              <li key={index} className="space-y-3 rounded-md border border-border p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <span className="pt-2 text-small font-medium text-muted-foreground">#{index + 1}</span>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={disabled || index === 0}
+                      onClick={() => {
+                        const next = [...value.milestones];
+                        [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                        onChange({ ...value, milestones: next });
+                      }}
+                    >
+                      Move up
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={disabled || index === value.milestones.length - 1}
+                      onClick={() => {
+                        const next = [...value.milestones];
+                        [next[index], next[index + 1]] = [next[index + 1], next[index]];
+                        onChange({ ...value, milestones: next });
+                      }}
+                    >
+                      Move down
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={disabled}
+                      aria-label={`Remove milestone ${index + 1}`}
+                      onClick={() => onChange({ ...value, milestones: value.milestones.filter((_, i) => i !== index) })}
+                    >
+                      <Trash2 aria-hidden="true" className="size-4" />
+                    </Button>
+                  </div>
+                </div>
+                <FormField id={`milestone-${index}-title`} label="Title">
+                  {(props) => (
+                    <Input
+                      {...props}
+                      value={milestone.title}
+                      disabled={disabled}
+                      onChange={(event) => {
+                        const next = [...value.milestones];
+                        next[index] = { ...milestone, title: event.target.value };
+                        onChange({ ...value, milestones: next });
+                      }}
+                    />
+                  )}
+                </FormField>
+                <FormField id={`milestone-${index}-description`} label="Description" hint="Optional.">
+                  {(props) => (
+                    <Textarea
+                      {...props}
+                      value={milestone.description ?? ""}
+                      rows={2}
+                      disabled={disabled}
+                      onChange={(event) => {
+                        const next = [...value.milestones];
+                        next[index] = { ...milestone, description: event.target.value.trim() || null };
+                        onChange({ ...value, milestones: next });
+                      }}
+                    />
+                  )}
+                </FormField>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <FormField id={`milestone-${index}-target`} label="Target date" hint="Optional.">
+                    {(props) => (
+                      <Input
+                        {...props}
+                        type="date"
+                        value={milestone.targetDate ?? ""}
+                        disabled={disabled}
+                        onChange={(event) => {
+                          const next = [...value.milestones];
+                          next[index] = { ...milestone, targetDate: event.target.value || null };
+                          onChange({ ...value, milestones: next });
+                        }}
+                      />
+                    )}
+                  </FormField>
+                  <FormField id={`milestone-${index}-completed`} label="Completed date" hint="Optional. Set once it's done.">
+                    {(props) => (
+                      <Input
+                        {...props}
+                        type="date"
+                        value={milestone.completedDate ?? ""}
+                        disabled={disabled}
+                        onChange={(event) => {
+                          const next = [...value.milestones];
+                          next[index] = { ...milestone, completedDate: event.target.value || null };
+                          onChange({ ...value, milestones: next });
+                        }}
+                      />
+                    )}
+                  </FormField>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </Card>
     </div>
   );

@@ -5,8 +5,8 @@ import Link from "next/link";
 import { Library, Pencil, Plus, Trash2 } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
 import { Alert } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ProjectStatusBadge } from "../projects/_components/project-status-badge";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FormField } from "@/components/ui/form-field";
@@ -244,9 +244,7 @@ export default function AdminAidxPublicationsPage() {
                     <div className="min-w-0 space-y-2">
                       <div className="flex flex-wrap items-center gap-3">
                         <h3 className="break-words text-h4 text-foreground">{publication.title}</h3>
-                        <Badge tone={publication.published ? "success" : "neutral"} variant="subtle" showDot>
-                          {publication.published ? "Public" : "Hidden"}
-                        </Badge>
+                        <ProjectStatusBadge status={publication.status} />
                       </div>
                       <p className="text-small text-foreground-secondary">
                         {labels.publication(publication.publicationType)} · {publication.year}

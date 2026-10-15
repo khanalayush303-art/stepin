@@ -1,14 +1,19 @@
-using SixLabors.ImageSharp;
+using SkiaSharp;
 
 namespace StepIn.Api.Endpoints;
 
 /// <summary>
 /// Validates an uploaded image or PDF before it ever reaches <c>IAidxMediaStorage</c>. Layered,
 /// not magic-bytes-only: an extension/content-type allow-list, then an actual decode (via
-/// ImageSharp — see the facts-to-verify note this phase's plan raised: no image-decoding library
-/// existed in this codebase before) that rejects a corrupt or polyglot file outright, and a cap on
-/// decoded pixel dimensions against a decompression-bomb-style resource exhaustion (a small file
-/// that decodes to an enormous bitmap).
+/// SkiaSharp — see the facts-to-verify note this phase's plan raised: no image-decoding library
+/// existed in this codebase before) that rejects a corrupt or polyglot file outright.
+///
+/// Dimensions are checked via <see cref="SKCodec"/>'s <c>Info</c>, which reads a file's declared
+/// width/height from its header without decoding the full pixel buffer — a small, malicious file
+/// that declares an enormous width/height is rejected before any large allocation happens, which
+/// is a stronger decompression-bomb mitigation than the more common "decode fully, then measure"
+/// approach. Full pixel decode (<see cref="SKBitmap.Decode(SKData)"/>) runs only after that check
+/// passes, as the final proof the bytes are a genuine, intact image.
 /// </summary>
 public static class AidxMediaValidation
 {
@@ -26,10 +31,11 @@ public static class AidxMediaValidation
         "image/jpeg", "image/png", "image/webp",
     };
 
-    public sealed record ValidationResult(bool Success, string? Error, string? Extension, byte[]? Content);
+    public sealed record ValidationResult(bool Success, string? Error, string? Extension, byte[]? Content, int? Width = null, int? Height = null);
 
     /// <summary>Reads the whole file into memory (capped by <see cref="MaxImageSizeBytes"/> before
-    /// this is ever called) and decodes it. The decode is the real check — a renamed non-image
+    /// this is ever called), checks its declared dimensions without a full decode, then performs
+    /// a real full decode as the final proof it is a genuine, intact image — a renamed non-image
     /// file, or one with a forged header, fails here even if its extension and declared
     /// Content-Type both look legitimate.</summary>
     public static async Task<ValidationResult> ValidateImageAsync(IFormFile file, CancellationToken cancellationToken)
@@ -57,20 +63,33 @@ public static class AidxMediaValidation
             content = buffer.ToArray();
         }
 
-        try
-        {
-            using var image = Image.Load(content);
-            if (image.Width > MaxDecodedDimension || image.Height > MaxDecodedDimension)
-            {
-                return new ValidationResult(false, $"Image dimensions must be no larger than {MaxDecodedDimension}x{MaxDecodedDimension} pixels.", null, null);
-            }
-        }
-        catch (Exception ex) when (ex is UnknownImageFormatException or InvalidImageContentException or NotSupportedException)
+        using var data = SKData.CreateCopy(content);
+        using var codec = SKCodec.Create(data);
+        if (codec is null)
         {
             return new ValidationResult(false, "The file could not be decoded as a valid image.", null, null);
         }
 
-        return new ValidationResult(true, null, extension.ToLowerInvariant(), content);
+        var info = codec.Info;
+        if (info.Width <= 0 || info.Height <= 0)
+        {
+            return new ValidationResult(false, "The file could not be decoded as a valid image.", null, null);
+        }
+
+        if (info.Width > MaxDecodedDimension || info.Height > MaxDecodedDimension)
+        {
+            return new ValidationResult(false, $"Image dimensions must be no larger than {MaxDecodedDimension}x{MaxDecodedDimension} pixels.", null, null);
+        }
+
+        // Full decode — the actual proof the bytes are intact and genuinely that format, not just
+        // a header that claims to be. SKBitmap.Decode returns null (never throws) on failure.
+        using var bitmap = SKBitmap.Decode(data);
+        if (bitmap is null)
+        {
+            return new ValidationResult(false, "The file could not be decoded as a valid image.", null, null);
+        }
+
+        return new ValidationResult(true, null, extension.ToLowerInvariant(), content, info.Width, info.Height);
     }
 
     /// <summary>A real signature check (the first five bytes of a PDF are always literally

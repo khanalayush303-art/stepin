@@ -15,20 +15,18 @@
     <PackageReference Include="Serilog.AspNetCore" Version="9.*" />
     <PackageReference Include="Serilog.Sinks.Console" Version="6.*" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.*" />
-    <!-- Pure-.NET image decoding (no native/OS dependency), used only to validate an uploaded
-         image actually decodes and to reject oversized/decompression-bomb-style dimensions —
-         see AidxMediaEndpoints. New dependency introduced for this phase; flagged per the
-         plan's own "facts to re-verify at implementation time" note that no image-decoding
-         library was present before.
-         Pinned to 3.1.12, not the 4.x line: 4.x hard-fails a Release build without a paid Six
-         Labors license (discovered by the local Docker image actually failing to build — not
-         assumed from the package's own README). 3.1.12 has open, known advisories (suppressed
-         below) but no license requirement; every call site here decodes only an already
-         size-capped (5 MB), server-received upload — never attacker-controlled streaming input
-         at scale — which substantially narrows the DoS-class risk these advisories describe.
-         Revisit if Six Labors ever offers a no-cost path for this project's qualifying use, or
-         swap to a differently-licensed decoder. -->
-    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+    <!-- Image decoding for upload validation — see AidxMediaValidation/AidxMediaEndpoints. MIT
+         licensed (SkiaSharp, the .NET bindings for Google's Skia) — no commercial license
+         requirement at any build configuration. SixLabors.ImageSharp was tried first: 4.x
+         hard-fails a `-c Release` publish without a paid Six Labors license (this broke the real
+         Docker image build, not a theoretical concern), and its unlicensed 3.1.x line carries open
+         CVEs — accepting those as a trade-off was the wrong call, since a maintained,
+         no-cost-licensed alternative exists. SKCodec additionally reads a file's declared
+         dimensions before decoding its full pixel buffer, a stronger decompression-bomb mitigation
+         than decode-then-measure. SkiaSharp.NativeAssets.Linux supplies the native libSkiaSharp.so
+         the Linux container runtime needs (Windows/macOS ship inside the main package already). -->
+    <PackageReference Include="SkiaSharp" Version="4.153.1" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="4.153.1" />
     <!-- Required by the dotnet-ef tool when this project is used as the startup project; Infrastructure's own reference is PrivateAssets=all so it doesn't flow here transitively. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.*">
       <PrivateAssets>all</PrivateAssets>

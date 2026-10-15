@@ -4,8 +4,7 @@ using System.Net.Http.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
+using SkiaSharp;
 using StepIn.Api.Endpoints;
 using StepIn.Domain.Aidx;
 using StepIn.Domain.Common;
@@ -23,17 +22,17 @@ public sealed class AidxMediaEndpointsTests(AuthApiFactory factory) : IClassFixt
 {
     private readonly AuthApiFactory _factory = factory;
 
-    // A real, genuinely-decodable 4x4 PNG, generated through ImageSharp itself rather than a
+    // A real, genuinely-decodable 4x4 PNG, generated through SkiaSharp itself rather than a
     // hand-copied base64 blob — so there's no risk of the test fixture itself being invalid and
     // masking what ValidateImageAsync's actual decode step does.
     private static readonly byte[] ValidPngBytes = BuildValidPng();
 
     private static byte[] BuildValidPng()
     {
-        using var image = new Image<Rgba32>(4, 4);
-        using var buffer = new MemoryStream();
-        image.SaveAsPng(buffer);
-        return buffer.ToArray();
+        using var bitmap = new SKBitmap(4, 4);
+        using var image = SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+        return data.ToArray();
     }
 
     private static readonly byte[] ValidPdfBytes = "%PDF-1.4\n%%EOF"u8.ToArray();
@@ -200,6 +199,51 @@ public sealed class AidxMediaEndpointsTests(AuthApiFactory factory) : IClassFixt
     }
 
     [Fact]
+    public async Task An_image_whose_declared_dimensions_exceed_the_cap_is_rejected_before_full_decode()
+    {
+        var admin = await AdminAsync();
+        var researcherId = await CreateResearcherAsync(admin);
+
+        // 8001x1: one pixel over AidxMediaValidation's 8000px cap on one axis, but trivial actual
+        // memory (a real decompression-bomb file would be tiny on disk and huge once decoded —
+        // this proves the cap itself is enforced, using a file that is honestly that large rather
+        // than a crafted bomb, since SKCodec.Info reads declared dimensions before any full
+        // pixel-buffer decode happens regardless of which path produced the oversized metadata).
+        byte[] oversized;
+        using (var bitmap = new SKBitmap(8001, 1))
+        using (var image = SKImage.FromBitmap(bitmap))
+        using (var data = image.Encode(SKEncodedImageFormat.Png, 100))
+        {
+            oversized = data.ToArray();
+        }
+
+        var upload = await SendAsync(BuildMultipart(
+            HttpMethod.Post, $"/api/v1/admin/aidx/people/{researcherId}/image", admin, oversized, "huge.png", "image/png",
+            new Dictionary<string, string> { ["altText"] = "Alt text" }));
+
+        upload.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var researcher = await db.AidxResearchers.AsNoTracking().SingleAsync(r => r.Id == researcherId, TestContext.Current.CancellationToken);
+        researcher.ProfileImageKey.Should().BeNull("a rejected upload must never be saved to storage or recorded on the row");
+    }
+
+    [Fact]
+    public async Task A_file_over_the_byte_size_cap_is_rejected_without_being_read_as_an_image()
+    {
+        var admin = await AdminAsync();
+        var researcherId = await CreateResearcherAsync(admin);
+
+        var tooLarge = new byte[AidxMediaValidation.MaxImageSizeBytes + 1];
+        var upload = await SendAsync(BuildMultipart(
+            HttpMethod.Post, $"/api/v1/admin/aidx/people/{researcherId}/image", admin, tooLarge, "big.png", "image/png",
+            new Dictionary<string, string> { ["altText"] = "Alt text" }));
+
+        upload.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
     public async Task An_unpublished_researchers_photo_is_not_served_to_an_anonymous_visitor()
     {
         var admin = await AdminAsync();
@@ -231,7 +275,8 @@ public sealed class AidxMediaEndpointsTests(AuthApiFactory factory) : IClassFixt
             .Content.ReadFromJsonAsync<AidxIdResponse>(TestContext.Current.CancellationToken))!;
 
         var firstUpload = await SendAsync(BuildMultipart(
-            HttpMethod.Post, $"/api/v1/aidx/authoring/news/{created.Id}/image", token, ValidPngBytes, "image.png", "image/png"));
+            HttpMethod.Post, $"/api/v1/aidx/authoring/news/{created.Id}/image", token, ValidPngBytes, "image.png", "image/png",
+            new Dictionary<string, string> { ["altText"] = "Alt text" }));
         firstUpload.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var scope = _factory.Services.CreateScope();

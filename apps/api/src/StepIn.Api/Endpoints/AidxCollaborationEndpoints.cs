@@ -31,7 +31,45 @@ public static partial class AidxCollaborationEndpoints
             .RequireAuthorization()
             .WithName("ListAidxCollaborationEnquiries");
 
+        app.MapPut("/api/v1/aidx/projects/{id:guid}/enquiries/{enquiryId:guid}/status", UpdateStatusAsync)
+            .WithTags("AIDX Collaboration")
+            .RequireAuthorization()
+            .WithName("UpdateAidxCollaborationEnquiryStatus");
+
         return app;
+    }
+
+    /// <summary>Shared by the inbox list and the status-update action — the same "project owner,
+    /// in-scope Editor, or LabManager/Admin" rule, checked once.</summary>
+    private static async Task<(AidxProject? Project, bool Authorized, IResult? Failure)> ResolveInboxAccessAsync(
+        Guid projectId, ClaimsPrincipal principal, ApplicationDbContext db, CancellationToken cancellationToken)
+    {
+        var user = await principal.GetCurrentUserAsync(db, cancellationToken);
+        if (user is null)
+        {
+            return (null, false, Results.Unauthorized());
+        }
+
+        if (user.AccountStatus != AccountStatus.Active)
+        {
+            return (null, false, Results.Forbid());
+        }
+
+        var project = await db.AidxProjects
+            .Include(p => p.ResearchAreas)
+            .FirstOrDefaultAsync(p => p.Id == projectId, cancellationToken);
+        if (project is null)
+        {
+            return (null, false, Results.NotFound());
+        }
+
+        var membership = await db.AidxMemberships.FirstOrDefaultAsync(m => m.UserId == user.Id, cancellationToken);
+        var isOwner = AidxPermissions.CanEditAsOwner(membership, project.CreatedByMembershipId);
+        var isReviewer = AidxPermissions.IsPlatformAdmin(user)
+            || (membership is { Status: AidxMembershipStatus.Active } && membership.Role != AidxLabRole.Contributor
+                && AidxPermissions.IsWithinEditorScope(membership, project.ResearchAreas.Select(r => r.ResearchAreaId)));
+
+        return !isOwner && !isReviewer ? (project, false, Results.Forbid()) : (project, true, null);
     }
 
     [GeneratedRegex(@"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
@@ -92,32 +130,12 @@ public static partial class AidxCollaborationEndpoints
     private static async Task<IResult> ListAsync(
         Guid id, ClaimsPrincipal principal, ApplicationDbContext db, CancellationToken cancellationToken)
     {
-        var user = await principal.GetCurrentUserAsync(db, cancellationToken);
-        if (user is null)
+        var (_, authorized, failure) = await ResolveInboxAccessAsync(id, principal, db, cancellationToken);
+        if (failure is not null)
         {
-            return Results.Unauthorized();
+            return failure;
         }
-
-        if (user.AccountStatus != AccountStatus.Active)
-        {
-            return Results.Forbid();
-        }
-
-        var project = await db.AidxProjects
-            .Include(p => p.ResearchAreas)
-            .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
-        if (project is null)
-        {
-            return Results.NotFound();
-        }
-
-        var membership = await db.AidxMemberships.FirstOrDefaultAsync(m => m.UserId == user.Id, cancellationToken);
-        var isOwner = AidxPermissions.CanEditAsOwner(membership, project.CreatedByMembershipId);
-        var isReviewer = AidxPermissions.IsPlatformAdmin(user)
-            || (membership is { Status: AidxMembershipStatus.Active } && membership.Role != AidxLabRole.Contributor
-                && AidxPermissions.IsWithinEditorScope(membership, project.ResearchAreas.Select(r => r.ResearchAreaId)));
-
-        if (!isOwner && !isReviewer)
+        if (!authorized)
         {
             return Results.Forbid();
         }
@@ -129,5 +147,40 @@ public static partial class AidxCollaborationEndpoints
             .ToListAsync(cancellationToken);
 
         return Results.Ok(enquiries);
+    }
+
+    private static async Task<IResult> UpdateStatusAsync(
+        Guid id, Guid enquiryId, UpdateAidxCollaborationEnquiryStatusRequest request,
+        ClaimsPrincipal principal, ApplicationDbContext db, CancellationToken cancellationToken)
+    {
+        var (_, authorized, failure) = await ResolveInboxAccessAsync(id, principal, db, cancellationToken);
+        if (failure is not null)
+        {
+            return failure;
+        }
+        if (!authorized)
+        {
+            return Results.Forbid();
+        }
+
+        if (!Enum.TryParse<AidxCollaborationEnquiryStatus>(request.Status, ignoreCase: true, out var status)
+            || status == AidxCollaborationEnquiryStatus.New)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["status"] = ["Status must be Reviewed or Closed."],
+            });
+        }
+
+        var enquiry = await db.AidxCollaborationEnquiries.FirstOrDefaultAsync(e => e.Id == enquiryId && e.ProjectId == id, cancellationToken);
+        if (enquiry is null)
+        {
+            return Results.NotFound();
+        }
+
+        enquiry.Status = status;
+        await db.SaveChangesAsync(cancellationToken);
+
+        return Results.Ok(new AidxCollaborationEnquiryResponse(enquiry.Id, enquiry.CreatedAt, enquiry.Name, enquiry.Email, enquiry.Message, enquiry.Status.ToString()));
     }
 }

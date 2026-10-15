@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/layout/page-header";
 import { AidxErrorState } from "@/components/aidx/aidx-ui";
+import { AidxEventRegistration } from "@/components/aidx/aidx-event-registration";
 import { Button } from "@/components/ui/button";
 import { aidxGet, AidxUnavailableError } from "@/lib/aidx/api";
 import { formatDateTime, safeHttpUrl } from "@/lib/aidx/format";
@@ -95,14 +96,28 @@ export default async function EventPage({ params }: Props) {
             ))}
         </div>
 
-        {safeHttpUrl(evt.registrationUrl) ? (
-          <Button asChild>
-            <a href={safeHttpUrl(evt.registrationUrl) ?? undefined} rel="noopener noreferrer" target="_blank">
-              Register
-              <span className="sr-only"> (opens in a new tab)</span>
+        <div className="flex flex-wrap items-center gap-3">
+          {safeHttpUrl(evt.registrationUrl) ? (
+            <Button asChild>
+              <a href={safeHttpUrl(evt.registrationUrl) ?? undefined} rel="noopener noreferrer" target="_blank">
+                Register
+                <span className="sr-only"> (opens in a new tab)</span>
+              </a>
+            </Button>
+          ) : null}
+          <Button asChild variant="outline">
+            <a href={`/api/v1/aidx/events/${encodeURIComponent(evt.slug)}/calendar.ics`} download>
+              Add to calendar
             </a>
           </Button>
-        ) : null}
+        </div>
+
+        <section aria-labelledby="registration-heading" className="space-y-3 rounded-lg border border-border bg-surface p-5">
+          <h2 id="registration-heading" className="text-h4 text-foreground">
+            Register for this event
+          </h2>
+          <AidxEventRegistration eventId={evt.id} />
+        </section>
       </div>
     </>
   );

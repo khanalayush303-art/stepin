@@ -49,7 +49,11 @@ public sealed record AidxProjectDetailResponse(
     DateTimeOffset? PublishedAt,
     IReadOnlyList<string> ResearchAreas,
     IReadOnlyList<string> Technologies,
-    IReadOnlyList<AidxProjectResearcherResponse> Researchers);
+    IReadOnlyList<AidxProjectResearcherResponse> Researchers,
+    string? Outcomes = null,
+    IReadOnlyList<AidxProjectMilestoneResponse>? Milestones = null);
+
+public sealed record AidxProjectMilestoneResponse(string Title, string? Description, DateOnly? TargetDate, DateOnly? CompletedDate);
 
 public sealed record AidxProjectResearcherResponse(Guid Id, string Slug, string DisplayName, string? Role);
 
@@ -313,7 +317,8 @@ public sealed record AidxProjectRequest(
     IReadOnlyList<Guid>? ResearchAreaIds,
     IReadOnlyList<string>? Technologies,
     IReadOnlyList<AidxProjectResearcherInput>? Researchers,
-    string? ExpectedVersion = null);
+    string? ExpectedVersion = null,
+    string? Outcomes = null);
 
 public sealed record AidxProjectResearcherInput(Guid ResearcherId, string? Role);
 

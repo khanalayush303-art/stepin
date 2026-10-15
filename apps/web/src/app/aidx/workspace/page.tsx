@@ -1,13 +1,16 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useAuth } from "@clerk/nextjs";
 import { Inbox } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { AidxStatusBadge } from "@/components/aidx/aidx-status-badge";
 import { apiClient, formError } from "@/lib/auth/client";
 import type { AidxWorkspaceItem, AidxWorkspaceSummary } from "@/lib/aidx/workspace-types";
@@ -29,6 +32,11 @@ export default function AidxWorkspacePage() {
   const [loadError, setLoadError] = React.useState<string>();
   const [actionError, setActionError] = React.useState<string>();
   const [actingOn, setActingOn] = React.useState<string>();
+  const [creating, setCreating] = React.useState(false);
+  const [newTitle, setNewTitle] = React.useState("");
+  const [newShortDescription, setNewShortDescription] = React.useState("");
+  const [newDescription, setNewDescription] = React.useState("");
+  const [createError, setCreateError] = React.useState<string>();
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -73,6 +81,36 @@ export default function AidxWorkspacePage() {
     }
   }
 
+  async function createProject(e: React.FormEvent) {
+    e.preventDefault();
+    setCreating(true);
+    setCreateError(undefined);
+    try {
+      const token = await getToken();
+      await apiClient.post("/api/v1/aidx/authoring/projects", token, {
+        title: newTitle,
+        slug: null,
+        shortDescription: newShortDescription,
+        description: newDescription,
+        startDate: null,
+        endDate: null,
+        externalUrl: null,
+        featured: false,
+        researchAreaIds: null,
+        technologies: null,
+        researchers: null,
+      });
+      setNewTitle("");
+      setNewShortDescription("");
+      setNewDescription("");
+      await load();
+    } catch (error) {
+      setCreateError(formError(error));
+    } finally {
+      setCreating(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="container-page space-y-6 py-10">
@@ -97,11 +135,34 @@ export default function AidxWorkspacePage() {
       <div className="space-y-1">
         <h1 className="text-h2 text-foreground">My AIDX workspace</h1>
         <p className="text-body text-muted-foreground">
-          Your own research content, submitted for review or already published. Creating brand-new
-          content currently goes through the AIDX admin team — this page tracks and submits what
-          already exists.
+          Your own research content, submitted for review or already published.
         </p>
       </div>
+
+      <Card className="space-y-3 p-5">
+        <h2 className="text-h4 text-foreground">Start a new project</h2>
+        <form onSubmit={createProject} className="space-y-3">
+          <Input placeholder="Title" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} required maxLength={200} />
+          <Input
+            placeholder="Short description (shown on listing pages)"
+            value={newShortDescription}
+            onChange={(e) => setNewShortDescription(e.target.value)}
+            required
+            maxLength={500}
+          />
+          <Textarea
+            placeholder="Full description"
+            value={newDescription}
+            onChange={(e) => setNewDescription(e.target.value)}
+            required
+            className="min-h-[6rem]"
+          />
+          {createError ? <Alert tone="error" title="Could not create the project.">{createError}</Alert> : null}
+          <Button type="submit" loading={creating}>
+            Create draft
+          </Button>
+        </form>
+      </Card>
 
       <ul className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
         {STAT_CARDS.map(({ key, label }) => (
@@ -132,6 +193,11 @@ export default function AidxWorkspacePage() {
                 </p>
               </div>
               <AidxStatusBadge status={item.status} />
+              {item.contentType === "Project" ? (
+                <Button variant="ghost" size="sm" asChild>
+                  <Link href={`/aidx/workspace/enquiries/${item.id}`}>Enquiries</Link>
+                </Button>
+              ) : null}
               {item.status === "Submitted" || item.status === "UnderReview" ? (
                 <Button
                   variant="outline"

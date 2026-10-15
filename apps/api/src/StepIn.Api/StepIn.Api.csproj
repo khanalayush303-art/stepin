@@ -15,6 +15,20 @@
     <PackageReference Include="Serilog.AspNetCore" Version="9.*" />
     <PackageReference Include="Serilog.Sinks.Console" Version="6.*" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.*" />
+    <!-- Pure-.NET image decoding (no native/OS dependency), used only to validate an uploaded
+         image actually decodes and to reject oversized/decompression-bomb-style dimensions —
+         see AidxMediaEndpoints. New dependency introduced for this phase; flagged per the
+         plan's own "facts to re-verify at implementation time" note that no image-decoding
+         library was present before.
+         Pinned to 3.1.12, not the 4.x line: 4.x hard-fails a Release build without a paid Six
+         Labors license (discovered by the local Docker image actually failing to build — not
+         assumed from the package's own README). 3.1.12 has open, known advisories (suppressed
+         below) but no license requirement; every call site here decodes only an already
+         size-capped (5 MB), server-received upload — never attacker-controlled streaming input
+         at scale — which substantially narrows the DoS-class risk these advisories describe.
+         Revisit if Six Labors ever offers a no-cost path for this project's qualifying use, or
+         swap to a differently-licensed decoder. -->
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
     <!-- Required by the dotnet-ef tool when this project is used as the startup project; Infrastructure's own reference is PrivateAssets=all so it doesn't flow here transitively. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.*">
       <PrivateAssets>all</PrivateAssets>

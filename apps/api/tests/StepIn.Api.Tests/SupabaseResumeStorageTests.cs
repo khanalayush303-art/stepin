@@ -353,6 +353,7 @@ public sealed class SupabaseResumeStorageTests
                 ["Storage:Supabase:Url"] = "https://example.supabase.co",
                 ["Storage:Supabase:ServiceKey"] = ApiKey,
                 ["Storage:Supabase:Bucket"] = "resumes",
+                ["Storage:Supabase:AidxMediaBucket"] = "aidx-media",
             })
             .Build();
 
@@ -361,5 +362,6 @@ public sealed class SupabaseResumeStorageTests
         using var provider = services.BuildServiceProvider();
 
         provider.GetRequiredService<IResumeStorage>().Should().BeOfType<SupabaseResumeStorage>();
+        provider.GetRequiredService<IAidxMediaStorage>().Should().BeOfType<SupabaseAidxMediaStorage>();
     }
 }

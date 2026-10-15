@@ -110,6 +110,7 @@ public static class AidxContentAuthoringEndpoints
             EndDate = request.EndDate,
             ExternalUrl = AidxEndpointHelpers.Clean(request.ExternalUrl),
             Featured = request.Featured,
+            Outcomes = request.Outcomes,
             CreatedByMembershipId = membership?.Id,
         };
 
@@ -183,6 +184,7 @@ public static class AidxContentAuthoringEndpoints
         target.EndDate = request.EndDate;
         target.ExternalUrl = AidxEndpointHelpers.Clean(request.ExternalUrl);
         target.Featured = request.Featured;
+        target.Outcomes = request.Outcomes;
 
         AidxAdminEndpoints.SyncProjectRelations(target, request, db);
         await db.SaveChangesAsync(cancellationToken);

@@ -132,6 +132,7 @@ app.MapAidxOpportunityAdminEndpoints();
 app.MapAidxMembershipEndpoints();
 app.MapAidxWorkflowEndpoints();
 app.MapAidxContentAuthoringEndpoints();
+app.MapAidxMediaEndpoints();
 app.MapAidxWorkspaceEndpoints();
 app.MapAidxSavedItemEndpoints();
 app.MapAidxCollaborationEndpoints();

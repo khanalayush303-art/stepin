@@ -378,6 +378,7 @@ public static class AidxWorkflowEndpoints
         canonical.EndDate = revision.EndDate;
         canonical.ExternalUrl = revision.ExternalUrl;
         canonical.Featured = revision.Featured;
+        canonical.Outcomes = revision.Outcomes;
         canonical.PublishedAt ??= DateTimeOffset.UtcNow;
         // Slug intentionally NOT copied — the canonical row's slug is its stable public URL.
     }

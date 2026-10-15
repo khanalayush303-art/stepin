@@ -35,12 +35,19 @@ internal static class AidxWorkflowSharedHelpers
         return (user, membership, null);
     }
 
-    /// <summary>Clones a project's nav collections onto a freshly-created revision row.</summary>
+    /// <summary>Clones a project's nav collections onto a freshly-created revision row. Milestones
+    /// are cloned for display/history continuity on the revision, but — like every other nav
+    /// collection here — there is no merge-back path onto the canonical row yet; see
+    /// AidxContentAuthoringEndpoints' and AidxAdminEndpoints' doc comments for the explicitly
+    /// deferred milestone-management gap.</summary>
     public static void ReparentProject(AidxProject clone, AidxProject canonical)
     {
         clone.ResearchAreas = canonical.ResearchAreas.Select(ra => new AidxProjectResearchArea { ProjectId = clone.Id, ResearchAreaId = ra.ResearchAreaId }).ToList();
         clone.Technologies = canonical.Technologies.Select(t => new AidxProjectTechnology { ProjectId = clone.Id, Name = t.Name }).ToList();
         clone.Researchers = canonical.Researchers.Select(r => new AidxProjectResearcher { ProjectId = clone.Id, ResearcherId = r.ResearcherId, Role = r.Role }).ToList();
+        clone.Milestones = canonical.Milestones
+            .Select(m => new AidxProjectMilestone { ProjectId = clone.Id, Title = m.Title, Description = m.Description, TargetDate = m.TargetDate, CompletedDate = m.CompletedDate, SortOrder = m.SortOrder })
+            .ToList();
     }
 
     /// <summary>Clones a publication's nav collections onto a freshly-created revision row.</summary>

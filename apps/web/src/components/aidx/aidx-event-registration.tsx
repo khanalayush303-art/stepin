@@ -91,6 +91,40 @@ export function AidxEventRegistration({ eventId }: { eventId: string }) {
     }
   }
 
+  async function cancelAsSignedInUser() {
+    setSubmitting(true);
+    setError(undefined);
+    try {
+      const token = await getToken();
+      await apiClient.post(`/api/v1/aidx/events/${eventId}/registrations/cancel`, token, { cancellationToken: null });
+      setAlreadyRegistered(false);
+      await loadSummary();
+    } catch (err) {
+      setError(formError(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const [cancelCode, setCancelCode] = React.useState("");
+  const [cancelling, setCancelling] = React.useState(false);
+  const [cancelled, setCancelled] = React.useState(false);
+  const [cancelError, setCancelError] = React.useState<string>();
+
+  async function cancelWithCode(e: React.FormEvent) {
+    e.preventDefault();
+    setCancelling(true);
+    setCancelError(undefined);
+    try {
+      await apiClient.post(`/api/v1/aidx/events/${eventId}/registrations/cancel`, null, { cancellationToken: cancelCode });
+      setCancelled(true);
+    } catch (err) {
+      setCancelError(formError(err));
+    } finally {
+      setCancelling(false);
+    }
+  }
+
   if (!isLoaded) {
     return null;
   }
@@ -106,7 +140,15 @@ export function AidxEventRegistration({ eventId }: { eventId: string }) {
   }
 
   if (alreadyRegistered) {
-    return <Alert tone="success" title="You're registered for this event." />;
+    return (
+      <div className="space-y-2">
+        <Alert tone="success" title="You're registered for this event." />
+        {error ? <Alert tone="error" title="Could not cancel.">{error}</Alert> : null}
+        <Button variant="outline" size="sm" onClick={cancelAsSignedInUser} loading={submitting}>
+          Cancel my registration
+        </Button>
+      </div>
+    );
   }
 
   if (summary?.isFull) {
@@ -130,18 +172,42 @@ export function AidxEventRegistration({ eventId }: { eventId: string }) {
   }
 
   return (
-    <form onSubmit={register} className="space-y-3">
-      {summary ? (
-        <p className="text-caption text-muted-foreground">
-          {summary.registeredCount} registered{summary.capacity ? ` of ${summary.capacity} places` : ""}
-        </p>
-      ) : null}
-      <Input placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} />
-      <Input type="email" placeholder="Your email" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={320} />
-      {error ? <Alert tone="error" title="Registration failed.">{error}</Alert> : null}
-      <Button type="submit" loading={submitting}>
-        Register
-      </Button>
-    </form>
+    <div className="space-y-4">
+      <form onSubmit={register} className="space-y-3">
+        {summary ? (
+          <p className="text-caption text-muted-foreground">
+            {summary.registeredCount} registered{summary.capacity ? ` of ${summary.capacity} places` : ""}
+          </p>
+        ) : null}
+        <Input placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} required maxLength={200} />
+        <Input type="email" placeholder="Your email" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={320} />
+        {error ? <Alert tone="error" title="Registration failed.">{error}</Alert> : null}
+        <Button type="submit" loading={submitting}>
+          Register
+        </Button>
+      </form>
+
+      {cancelled ? (
+        <Alert tone="success" title="Your registration has been cancelled." />
+      ) : (
+        <details className="text-small">
+          <summary className="cursor-pointer font-medium text-foreground-secondary">
+            Already registered and need to cancel?
+          </summary>
+          <form onSubmit={cancelWithCode} className="mt-3 space-y-2">
+            <Input
+              placeholder="Your cancellation code"
+              value={cancelCode}
+              onChange={(e) => setCancelCode(e.target.value)}
+              required
+            />
+            {cancelError ? <Alert tone="error" title="Could not cancel.">{cancelError}</Alert> : null}
+            <Button type="submit" variant="outline" size="sm" loading={cancelling}>
+              Cancel registration
+            </Button>
+          </form>
+        </details>
+      )}
+    </div>
   );
 }

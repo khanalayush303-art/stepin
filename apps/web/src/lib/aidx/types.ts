@@ -37,6 +37,13 @@ export interface ProjectResearcher {
   role: string | null;
 }
 
+export interface ProjectMilestone {
+  title: string;
+  description: string | null;
+  targetDate: string | null;
+  completedDate: string | null;
+}
+
 export interface ProjectDetail {
   id: string;
   title: string;
@@ -51,6 +58,8 @@ export interface ProjectDetail {
   researchAreas: string[];
   technologies: string[];
   researchers: ProjectResearcher[];
+  outcomes: string | null;
+  milestones: ProjectMilestone[];
 }
 
 export type ResearcherCategory = "Academic" | "ResearchAssistant" | "PhdStudent" | "ResearchStudent" | "Alumni";

@@ -21,6 +21,11 @@ public sealed class AidxResearcher : Entity
 
     public string? ProfileImageKey { get; set; }
 
+    /// <summary>Required (at the application-validation layer) whenever <see cref="ProfileImageKey"/>
+    /// is set, for new/edited rows going forward. Existing image-having rows were backfilled with an
+    /// honest placeholder rather than left blank or forced NOT NULL, which would have broken them.</summary>
+    public string? ImageAltText { get; set; }
+
     public string? OrcidUrl { get; set; }
 
     public string? GoogleScholarUrl { get; set; }

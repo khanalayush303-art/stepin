@@ -108,6 +108,13 @@ export function AidxAccountNav() {
         </Link>
       ) : null}
 
+      <Link
+        href="/aidx/saved"
+        className="rounded-sm text-small font-medium text-foreground-secondary underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      >
+        Saved items
+      </Link>
+
       <span className="hidden text-small text-muted-foreground sm:inline">
         {user?.primaryEmailAddress?.emailAddress}
       </span>

@@ -17,6 +17,7 @@ public sealed class AidxResearcherConfiguration : IEntityTypeConfiguration<AidxR
         builder.Property(r => r.Position).HasMaxLength(200);
         builder.Property(r => r.Biography).HasMaxLength(5000);
         builder.Property(r => r.ProfileImageKey).HasMaxLength(500);
+        builder.Property(r => r.ImageAltText).HasMaxLength(300);
         builder.Property(r => r.OrcidUrl).HasMaxLength(500);
         builder.Property(r => r.GoogleScholarUrl).HasMaxLength(500);
         builder.Property(r => r.LinkedInUrl).HasMaxLength(500);

@@ -131,6 +131,48 @@ public sealed class AidxCollaborationEndpointsTests(AuthApiFactory factory) : IC
     }
 
     [Fact]
+    public async Task The_owner_can_mark_an_enquiry_reviewed_or_closed_but_a_stranger_cannot()
+    {
+        var (ownerToken, ownerUserId) = await NewUserAsync();
+        var project = await CreatePublishedProjectAsync();
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var membership = new AidxMembership { UserId = ownerUserId, Role = AidxLabRole.Contributor, Status = AidxMembershipStatus.Active, GrantedByUserId = ownerUserId };
+            db.AidxMemberships.Add(membership);
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+            await db.AidxProjects.Where(p => p.Id == project.Id)
+                .ExecuteUpdateAsync(s => s.SetProperty(p => p.CreatedByMembershipId, membership.Id), TestContext.Current.CancellationToken);
+        }
+
+        await SendAsync(HttpMethod.Post, $"/api/v1/aidx/projects/{project.Id}/enquiries", null,
+            new SubmitCollaborationEnquiryRequest("Jane", "jane@example.com", "Hi"));
+
+        var inbox = await SendAsync(HttpMethod.Get, $"/api/v1/aidx/projects/{project.Id}/enquiries", ownerToken);
+        var enquiries = await inbox.Content.ReadFromJsonAsync<List<AidxCollaborationEnquiryResponse>>(TestContext.Current.CancellationToken);
+        var enquiry = enquiries!.Single();
+        enquiry.Status.Should().Be("New");
+
+        var (strangerToken, _) = await NewUserAsync();
+        (await SendAsync(HttpMethod.Put, $"/api/v1/aidx/projects/{project.Id}/enquiries/{enquiry.Id}/status", strangerToken,
+                new UpdateAidxCollaborationEnquiryStatusRequest("Reviewed")))
+            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        var reviewed = await SendAsync(HttpMethod.Put, $"/api/v1/aidx/projects/{project.Id}/enquiries/{enquiry.Id}/status", ownerToken,
+            new UpdateAidxCollaborationEnquiryStatusRequest("Reviewed"));
+        reviewed.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await reviewed.Content.ReadFromJsonAsync<AidxCollaborationEnquiryResponse>(TestContext.Current.CancellationToken))!.Status.Should().Be("Reviewed");
+
+        var rejectedBackToNew = await SendAsync(HttpMethod.Put, $"/api/v1/aidx/projects/{project.Id}/enquiries/{enquiry.Id}/status", ownerToken,
+            new UpdateAidxCollaborationEnquiryStatusRequest("New"));
+        rejectedBackToNew.StatusCode.Should().Be(HttpStatusCode.BadRequest, "an inbox viewer can never set an enquiry back to New");
+
+        var closed = await SendAsync(HttpMethod.Put, $"/api/v1/aidx/projects/{project.Id}/enquiries/{enquiry.Id}/status", ownerToken,
+            new UpdateAidxCollaborationEnquiryStatusRequest("Closed"));
+        closed.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
     public async Task Anonymous_registration_returns_a_cancellation_token_and_cancellation_requires_it()
     {
         var evt = await CreatePublishedEventAsync();

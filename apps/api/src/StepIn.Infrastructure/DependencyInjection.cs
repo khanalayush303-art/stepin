@@ -39,6 +39,7 @@ public static class DependencyInjection
 
         services.AddSingleton<IDateTimeProvider, SystemDateTimeProvider>();
         services.AddResumeStorage(configuration);
+        services.AddAidxMediaStorage(configuration);
 
         services.AddDbContext<ApplicationDbContext>(options =>
         {
@@ -110,6 +111,54 @@ public static class DependencyInjection
             client.Timeout = TimeSpan.FromSeconds(30);
             // The service-role key authorizes every request this client ever makes. It is set
             // once, here, and never logged, returned to a caller, or sent to the frontend.
+            client.DefaultRequestHeaders.Add("apikey", serviceKey);
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", serviceKey);
+        });
+
+        return services;
+    }
+
+    /// <summary>
+    /// Selects the AIDX media storage backend the same way <see cref="AddResumeStorage"/> does,
+    /// from the same <c>Storage:Provider</c> switch — but a separate bucket
+    /// (<c>Storage:Supabase:AidxMediaBucket</c>, a new required configuration key; the <c>Url</c>/
+    /// <c>ServiceKey</c> values are reused, not duplicated), so resume storage is completely
+    /// untouched by this addition.
+    /// </summary>
+    private static IServiceCollection AddAidxMediaStorage(this IServiceCollection services, IConfiguration configuration)
+    {
+        var provider = configuration["Storage:Provider"];
+
+        if (!string.Equals(provider, "Supabase", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddSingleton<IAidxMediaStorage, LocalDiskAidxMediaStorage>();
+            return services;
+        }
+
+        var url = configuration["Storage:Supabase:Url"];
+        var serviceKey = configuration["Storage:Supabase:ServiceKey"];
+        var bucket = configuration["Storage:Supabase:AidxMediaBucket"];
+
+        if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(serviceKey) || string.IsNullOrWhiteSpace(bucket))
+        {
+            throw new InvalidOperationException(
+                "Storage:Provider is 'Supabase' but Storage:Supabase:Url, :ServiceKey and " +
+                ":AidxMediaBucket must all be set. Set them via Storage__Supabase__Url, " +
+                "Storage__Supabase__ServiceKey and Storage__Supabase__AidxMediaBucket in the " +
+                "environment, or the equivalent appsettings keys.");
+        }
+
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var baseUri))
+        {
+            throw new InvalidOperationException("Storage:Supabase:Url must be an absolute URL, e.g. https://<project>.supabase.co.");
+        }
+
+        var objectBaseUri = new Uri($"{baseUri.ToString().TrimEnd('/')}/storage/v1/object/{bucket.Trim('/')}/");
+
+        services.AddHttpClient<IAidxMediaStorage, SupabaseAidxMediaStorage>(client =>
+        {
+            client.BaseAddress = objectBaseUri;
+            client.Timeout = TimeSpan.FromSeconds(30);
             client.DefaultRequestHeaders.Add("apikey", serviceKey);
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", serviceKey);
         });

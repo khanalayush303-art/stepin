@@ -130,6 +130,7 @@ public static class AidxPublicEndpoints
             .Include(p => p.ResearchAreas).ThenInclude(r => r.ResearchArea)
             .Include(p => p.Technologies)
             .Include(p => p.Researchers).ThenInclude(r => r.Researcher)
+            .Include(p => p.Milestones)
             .FirstOrDefaultAsync(p => p.Slug == slug && p.Status == AidxContentStatus.Published && p.RevisionOfId == null, cancellationToken);
 
         if (project is null)
@@ -154,6 +155,11 @@ public static class AidxPublicEndpoints
                 .Where(r => r.Researcher.Published)
                 .OrderBy(r => r.Researcher.DisplayName)
                 .Select(r => new AidxProjectResearcherResponse(r.ResearcherId, r.Researcher.Slug, r.Researcher.DisplayName, r.Role))
+                .ToList(),
+            project.Outcomes,
+            project.Milestones
+                .OrderBy(m => m.SortOrder)
+                .Select(m => new AidxProjectMilestoneResponse(m.Title, m.Description, m.TargetDate, m.CompletedDate))
                 .ToList());
 
         return Results.Ok(response);

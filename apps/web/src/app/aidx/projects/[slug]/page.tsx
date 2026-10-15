@@ -3,6 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/layout/page-header";
 import { AidxErrorState, Chips } from "@/components/aidx/aidx-ui";
+import { AidxSaveButton } from "@/components/aidx/aidx-save-button";
+import { AidxCollaborationForm } from "@/components/aidx/aidx-collaboration-form";
 import { Badge } from "@/components/ui/badge";
 import { aidxGet, AidxUnavailableError } from "@/lib/aidx/api";
 import { formatDate, safeHttpUrl } from "@/lib/aidx/format";
@@ -82,12 +84,52 @@ export default async function ProjectPage({ params }: Props) {
             </Badge>
           ) : null}
           {dates.length ? <span className="text-small text-muted-foreground">{dates.join(" to ")}</span> : null}
+          <AidxSaveButton contentType="project" contentId={project.id} />
         </div>
       </PageHeader>
 
       <div className="container-page grid gap-12 py-12 lg:grid-cols-[2fr_1fr]">
         <article className="space-y-6">
           <Paragraphs text={project.description} />
+
+          {project.milestones.length ? (
+            <section aria-labelledby="milestones-heading" className="space-y-3">
+              <h2 id="milestones-heading" className="text-h4 text-foreground">
+                Milestones
+              </h2>
+              <ul className="space-y-3">
+                {project.milestones.map((milestone, index) => (
+                  <li key={index} className="rounded-md border border-border p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-small font-medium text-foreground">{milestone.title}</p>
+                      {milestone.completedDate ? (
+                        <Badge tone="success" variant="subtle">
+                          Completed {formatDate(milestone.completedDate)}
+                        </Badge>
+                      ) : milestone.targetDate ? (
+                        <Badge tone="neutral" variant="subtle">
+                          Target {formatDate(milestone.targetDate)}
+                        </Badge>
+                      ) : null}
+                    </div>
+                    {milestone.description ? (
+                      <p className="mt-1 text-small text-muted-foreground">{milestone.description}</p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
+          {project.outcomes ? (
+            <section aria-labelledby="outcomes-heading" className="space-y-2">
+              <h2 id="outcomes-heading" className="text-h4 text-foreground">
+                Outcomes
+              </h2>
+              <Paragraphs text={project.outcomes} />
+            </section>
+          ) : null}
+
           {safeHttpUrl(project.externalUrl) ? (
             <p>
               <a
@@ -147,6 +189,14 @@ export default async function ProjectPage({ params }: Props) {
             ) : (
               <p className="text-small text-muted-foreground">Team members for this project will be listed here.</p>
             )}
+          </section>
+
+          <section aria-labelledby="project-enquiry" className="space-y-3 rounded-lg border border-border bg-surface p-5">
+            <h2 id="project-enquiry" className="text-h4 text-foreground">
+              Interested in this project?
+            </h2>
+            <p className="text-small text-muted-foreground">Send a message to the team.</p>
+            <AidxCollaborationForm projectId={project.id} />
           </section>
         </aside>
       </div>

@@ -54,6 +54,12 @@ public static class AidxSavedItemEndpoints
         _ => null,
     };
 
+    private static async Task<string?> SlugForAsync(IApplicationDbContext db, AidxContentType type, Guid id, CancellationToken cancellationToken) => type switch
+    {
+        AidxContentType.Project => await db.AidxProjects.Where(p => p.Id == id).Select(p => p.Slug).FirstOrDefaultAsync(cancellationToken),
+        _ => null,
+    };
+
     private static async Task<IResult> SaveAsync(
         string contentType, Guid id, ClaimsPrincipal principal, IApplicationDbContext db, CancellationToken cancellationToken)
     {
@@ -141,7 +147,8 @@ public static class AidxSavedItemEndpoints
         foreach (var item in saved)
         {
             var title = await TitleForAsync(db, item.ContentType, item.ContentId, cancellationToken);
-            results.Add(new AidxSavedItemResponse(item.Id, item.CreatedAt, item.ContentType.ToString(), item.ContentId, title ?? ""));
+            var slug = await SlugForAsync(db, item.ContentType, item.ContentId, cancellationToken);
+            results.Add(new AidxSavedItemResponse(item.Id, item.CreatedAt, item.ContentType.ToString(), item.ContentId, title ?? "", slug));
         }
 
         return Results.Ok(results);

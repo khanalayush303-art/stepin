@@ -3,9 +3,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/layout/page-header";
 import { AidxErrorState } from "@/components/aidx/aidx-ui";
+import { AidxSaveButton } from "@/components/aidx/aidx-save-button";
+import { AidxCitationBlock } from "@/components/aidx/aidx-citation-block";
 import { Badge } from "@/components/ui/badge";
 import { aidxGet, AidxUnavailableError } from "@/lib/aidx/api";
 import { labels, safeHttpUrl } from "@/lib/aidx/format";
+import { formatApaCitation, formatBibtex } from "@/lib/aidx/citation";
 import type { PublicationDetail } from "@/lib/aidx/types";
 
 type Props = { params: Promise<{ id: string }> };
@@ -75,9 +78,12 @@ export default async function PublicationPage({ params }: Props) {
         title={publication.title}
         description={[publication.venue, publication.year].filter(Boolean).join(" · ")}
       >
-        <Badge tone="neutral" variant="subtle">
-          {labels.publication(publication.publicationType)}
-        </Badge>
+        <div className="flex flex-wrap items-center gap-3">
+          <Badge tone="neutral" variant="subtle">
+            {labels.publication(publication.publicationType)}
+          </Badge>
+          <AidxSaveButton contentType="publication" contentId={publication.id} />
+        </div>
       </PageHeader>
 
       <div className="container-page grid gap-12 py-12 lg:grid-cols-[2fr_1fr]">
@@ -104,6 +110,14 @@ export default async function PublicationPage({ params }: Props) {
             ) : (
               <p className="text-body text-muted-foreground">An abstract has not been added yet.</p>
             )}
+          </section>
+
+          <section aria-labelledby="citation-heading" className="space-y-4">
+            <h2 id="citation-heading" className="text-h4 text-foreground">
+              Cite this work
+            </h2>
+            <AidxCitationBlock label="APA" text={formatApaCitation(publication)} />
+            <AidxCitationBlock label="BibTeX" text={formatBibtex(publication)} />
           </section>
         </article>
 

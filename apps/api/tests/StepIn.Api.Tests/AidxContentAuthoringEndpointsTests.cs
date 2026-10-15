@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -260,6 +261,36 @@ public sealed class AidxContentAuthoringEndpointsTests(AuthApiFactory factory) :
         var revision = await db.AidxProjects.AsNoTracking().SingleAsync(p => p.Id == editBody.Id, TestContext.Current.CancellationToken);
         revision.Title.Should().Be(newTitle);
         revision.CreatedByMembershipId.Should().Be(contributorMembership.Id);
+    }
+
+    [Fact]
+    public async Task Outcomes_set_through_authoring_survive_approval_and_appear_on_the_public_page()
+    {
+        var (contributorToken, contributorUserId) = await NewUserAsync();
+        await GrantAsync(contributorUserId, AidxLabRole.Contributor);
+        var (editorToken, editorUserId) = await NewUserAsync();
+        await GrantAsync(editorUserId, AidxLabRole.Editor);
+
+        var title = Unique("Outcomes Project");
+        var created = (await (await SendAsync(HttpMethod.Post, "/api/v1/aidx/authoring/projects", contributorToken, ProjectRequest(title)))
+            .Content.ReadFromJsonAsync<AidxIdResponse>(TestContext.Current.CancellationToken))!;
+
+        var withOutcomes = new AidxProjectRequest(
+            title, null, "Short.", "Long description.", null, null, null, false, null, null, null, created.Version, "Delivered a working prototype.");
+        (await SendAsync(HttpMethod.Put, $"/api/v1/aidx/authoring/projects/{created.Id}", contributorToken, withOutcomes))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var afterEditVersion = await CurrentVersionAsync(created.Id);
+        (await SendAsync(HttpMethod.Post, $"/api/v1/aidx/content/project/{created.Id}/submit", contributorToken,
+            new AidxWorkflowActionRequest(afterEditVersion))).StatusCode.Should().Be(HttpStatusCode.OK);
+        var afterSubmitVersion = await CurrentVersionAsync(created.Id);
+        (await SendAsync(HttpMethod.Post, $"/api/v1/aidx/content/project/{created.Id}/approve", editorToken,
+            new AidxWorkflowActionRequest(afterSubmitVersion))).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var slug = (await ReloadProjectAsync(created.Id)).Slug;
+        var publicDetail = await SendAsync(HttpMethod.Get, $"/api/v1/aidx/projects/{slug}", null);
+        var body = await publicDetail.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        body.GetProperty("outcomes").GetString().Should().Be("Delivered a working prototype.");
     }
 
     private async Task<string> CurrentVersionAsync(Guid id)

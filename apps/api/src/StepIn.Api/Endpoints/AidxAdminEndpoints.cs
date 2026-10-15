@@ -711,6 +711,7 @@ public static class AidxAdminEndpoints
             EndDate = request.EndDate,
             ExternalUrl = AidxEndpointHelpers.Clean(request.ExternalUrl),
             Featured = request.Featured,
+            Outcomes = request.Outcomes,
         };
 
         SyncProjectRelations(project, request, db);
@@ -776,6 +777,7 @@ public static class AidxAdminEndpoints
         target.EndDate = request.EndDate;
         target.ExternalUrl = AidxEndpointHelpers.Clean(request.ExternalUrl);
         target.Featured = request.Featured;
+        target.Outcomes = request.Outcomes;
 
         SyncProjectRelations(target, request, db);
         await db.SaveChangesAsync(cancellationToken);

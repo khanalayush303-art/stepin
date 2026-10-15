@@ -231,7 +231,7 @@ public sealed class AidxPeopleCmsTests(AuthApiFactory factory) : IClassFixture<A
                 [new AidxProjectResearcherInput(person.Id, "Lead")]));
         var publicationTitle = Unique("Authored paper");
         await SendAsync(HttpMethod.Post, "/api/v1/admin/aidx/publications", admin,
-            new AidxPublicationRequest(publicationTitle, null, "Report", null, 2025, null, null, false,
+            new AidxPublicationRequest(publicationTitle, null, "Report", null, 2025, null, null,
                 [new AidxAuthorInput(person.Id, null)]));
 
         var detail = (await (await SendAsync(HttpMethod.Get, $"{Route}/{person.Id}", admin))
@@ -267,7 +267,7 @@ public sealed class AidxPeopleCmsTests(AuthApiFactory factory) : IClassFixture<A
         var admin = await AdminAsync();
         var person = await CreatePersonAsync(admin, PersonRequest(Unique("Authoring person")));
         var publication = (await (await SendAsync(HttpMethod.Post, "/api/v1/admin/aidx/publications", admin,
-                new AidxPublicationRequest(Unique("Protected paper"), null, "Report", null, 2024, null, null, false,
+                new AidxPublicationRequest(Unique("Protected paper"), null, "Report", null, 2024, null, null,
                     [new AidxAuthorInput(person.Id, null)])))
             .Content.ReadFromJsonAsync<AidxIdResponse>(TestContext.Current.CancellationToken))!;
 

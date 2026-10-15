@@ -1,6 +1,9 @@
+using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using StepIn.Application.Common.Interfaces;
 using StepIn.Domain.Aidx;
+using StepIn.Infrastructure.Aidx;
+using StepIn.Infrastructure.Persistence;
 
 namespace StepIn.Api.Endpoints;
 
@@ -9,10 +12,21 @@ namespace StepIn.Api.Endpoints;
 /// so applicants and recruiters get 403 and anonymous callers get 401. Admins can write
 /// content only through these routes; the public routes are read-only.
 ///
-/// Publishing rules: a draft or archived project, news item or event can be published,
-/// and only a published one can be archived. Publishing twice is a 409 rather than a
-/// silent no-op, so the audit trail stays meaningful. Researchers and publications use
-/// a plain <c>Published</c> flag because they have no draft lifecycle.
+/// Mutations of workflow content (Project/News/Event/Publication) route through the same
+/// <see cref="AidxContentEditingService"/> the membership-gated endpoints use — there is
+/// structurally one place that writes these rows, not two that could drift apart. A Draft
+/// or ChangesRequested row is still edited in place (nothing public is at stake yet); editing
+/// an already-Published row never touches its live fields — it opens (or updates) a pending
+/// revision instead, which must then go through the normal submit/approve cycle (the same
+/// generic <c>/api/v1/aidx/content/{contentType}/{id}/...</c> routes Admin already has access
+/// to, since Admin satisfies every AIDX review check with no membership row needed) before it
+/// takes effect. "Publish" here therefore specifically means "first publish of a never-yet-
+/// published Draft" — it chains Submit→Approve through the engine so even this one-click admin
+/// action produces a real, audited snapshot, rather than a bare field flip with no history.
+///
+/// Publication has no independent <c>Published</c> flag a client can set directly — that was
+/// the mechanism by which Status and Published could previously diverge. Both are now set only
+/// by the engine's <c>onFirstPublish</c>/<c>onArchive</c> hooks, in lockstep, every time.
 /// </summary>
 public static class AidxAdminEndpoints
 {
@@ -37,6 +51,8 @@ public static class AidxAdminEndpoints
 
         admin.MapPost("/publications", CreatePublicationAsync).WithName("CreateAidxPublication");
         admin.MapPut("/publications/{id:guid}", UpdatePublicationAsync).WithName("UpdateAidxPublication");
+        admin.MapPost("/publications/{id:guid}/publish", PublishPublicationAsync).WithName("PublishAidxPublication");
+        admin.MapPost("/publications/{id:guid}/archive", ArchivePublicationAsync).WithName("ArchiveAidxPublication");
 
         admin.MapPost("/news", CreateNewsAsync).WithName("CreateAidxNews");
         admin.MapPut("/news/{id:guid}", UpdateNewsAsync).WithName("UpdateAidxNews");
@@ -106,6 +122,9 @@ public static class AidxAdminEndpoints
         var query = db.AidxProjects
             .AsNoTracking()
             .Include(p => p.ResearchAreas).ThenInclude(r => r.ResearchArea)
+            // A revision is a separate row sharing the canonical's content shape — it is never
+            // an independent project in the admin list. See it via the revision-history route.
+            .Where(p => p.RevisionOfId == null)
             .AsQueryable();
 
         if (AidxEndpointHelpers.TryParseEnum<AidxContentStatus>(status, out var parsedStatus))
@@ -155,14 +174,14 @@ public static class AidxAdminEndpoints
     /// Everything the admin edit form needs, including the researcher links. Those links are not
     /// editable yet, but the form sends them back unchanged so a save does not drop them.
     /// </summary>
-    private static async Task<IResult> GetProjectAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken)
+    private static async Task<IResult> GetProjectAsync(
+        Guid id, IApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken)
     {
         var project = await db.AidxProjects
-            .AsNoTracking()
             .Include(p => p.ResearchAreas)
             .Include(p => p.Technologies)
             .Include(p => p.Researchers).ThenInclude(r => r.Researcher)
-            .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+            .FirstOrDefaultAsync(p => p.Id == id && p.RevisionOfId == null, cancellationToken);
 
         if (project is null)
         {
@@ -186,7 +205,8 @@ public static class AidxAdminEndpoints
             project.Researchers
                 .OrderBy(r => r.Researcher.DisplayName)
                 .Select(r => new AidxAdminProjectResearcherResponse(r.ResearcherId, r.Researcher.DisplayName, r.Role))
-                .ToList()));
+                .ToList(),
+            editing.GetVersion(project)));
     }
 
     private static async Task<IResult> ListPeopleAsync(
@@ -319,6 +339,7 @@ public static class AidxAdminEndpoints
         var query = db.AidxPublications
             .AsNoTracking()
             .Include(p => p.Authors).ThenInclude(a => a.Researcher)
+            .Where(p => p.RevisionOfId == null)
             .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(q))
@@ -365,14 +386,14 @@ public static class AidxAdminEndpoints
     /// The admin edit view. Authors keep their order, and their researcher's public flag is included so the
     /// form can say when an author is currently hidden. Hidden authors stay linked, as the public list does.
     /// </summary>
-    private static async Task<IResult> GetPublicationAdminAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken)
+    private static async Task<IResult> GetPublicationAdminAsync(
+        Guid id, IApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken)
     {
         var publication = await db.AidxPublications
-            .AsNoTracking()
             .Include(p => p.Authors).ThenInclude(a => a.Researcher)
             .Include(p => p.ResearchAreas)
             .Include(p => p.Projects).ThenInclude(l => l.Project)
-            .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+            .FirstOrDefaultAsync(p => p.Id == id && p.RevisionOfId == null, cancellationToken);
 
         if (publication is null)
         {
@@ -402,7 +423,9 @@ public static class AidxAdminEndpoints
             publication.Projects
                 .Select(l => new AidxLinkedProjectResponse(l.ProjectId, l.Project.Title, l.Project.Slug, l.Project.Status.ToString()))
                 .OrderBy(p => p.Title)
-                .ToList()));
+                .ToList(),
+            publication.Status.ToString(),
+            editing.GetVersion(publication)));
     }
 
     private static async Task<IResult> ListNewsAdminAsync(
@@ -424,7 +447,7 @@ public static class AidxAdminEndpoints
             return Results.ValidationProblem(errors);
         }
 
-        var query = db.AidxNews.AsNoTracking().AsQueryable();
+        var query = db.AidxNews.AsNoTracking().Where(n => n.RevisionOfId == null).AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(q))
         {
@@ -456,11 +479,11 @@ public static class AidxAdminEndpoints
             total));
     }
 
-    private static async Task<IResult> GetNewsAdminAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken)
+    private static async Task<IResult> GetNewsAdminAsync(
+        Guid id, IApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken)
     {
         var news = await db.AidxNews
-            .AsNoTracking()
-            .FirstOrDefaultAsync(n => n.Id == id, cancellationToken);
+            .FirstOrDefaultAsync(n => n.Id == id && n.RevisionOfId == null, cancellationToken);
 
         if (news is null)
         {
@@ -489,7 +512,8 @@ public static class AidxAdminEndpoints
             news.CreatedAt,
             news.UpdatedAt,
             news.AuthorResearcherId,
-            authorName));
+            authorName,
+            editing.GetVersion(news)));
     }
 
     private static async Task<IResult> ListEventsAdminAsync(
@@ -513,7 +537,7 @@ public static class AidxAdminEndpoints
             return Results.ValidationProblem(errors);
         }
 
-        var query = db.AidxEvents.AsNoTracking().AsQueryable();
+        var query = db.AidxEvents.AsNoTracking().Where(e => e.RevisionOfId == null).AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(q))
         {
@@ -553,11 +577,11 @@ public static class AidxAdminEndpoints
             total));
     }
 
-    private static async Task<IResult> GetEventAdminAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken)
+    private static async Task<IResult> GetEventAdminAsync(
+        Guid id, IApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken)
     {
         var evt = await db.AidxEvents
-            .AsNoTracking()
-            .FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
+            .FirstOrDefaultAsync(e => e.Id == id && e.RevisionOfId == null, cancellationToken);
 
         if (evt is null)
         {
@@ -577,7 +601,8 @@ public static class AidxAdminEndpoints
             evt.RegistrationUrl,
             evt.SpeakerName,
             evt.CreatedAt,
-            evt.UpdatedAt));
+            evt.UpdatedAt,
+            editing.GetVersion(evt)));
     }
 
     /// <summary>Researcher name when linked, otherwise the external name. Shared by list and detail.</summary>
@@ -695,17 +720,37 @@ public static class AidxAdminEndpoints
         return Results.Created((string?)null, new AidxIdResponse(project.Id, project.Slug, project.Status.ToString()));
     }
 
-    private static async Task<IResult> UpdateProjectAsync(Guid id, AidxProjectRequest request, IApplicationDbContext db, CancellationToken cancellationToken)
+    /// <summary>
+    /// Draft/ChangesRequested projects are edited in place — nothing public is at stake yet.
+    /// A Published project's content fields are never touched directly:
+    /// <see cref="AidxContentEditingService.BeginEditAsync{TContent}"/> opens (or reuses) a
+    /// pending revision, and the field updates below (other than slug) land on that revision row
+    /// instead of the live canonical one. The response's <c>RevisionOfId</c> tells the caller
+    /// which happened.
+    /// <para>
+    /// The slug is the one exception, applied straight to the canonical row regardless of status:
+    /// it is a routing/addressing detail, not reviewable editorial content, and admins have always
+    /// been able to rename a published item's URL in one step — a real, tested capability this
+    /// change must not remove.
+    /// </para>
+    /// </summary>
+    private static async Task<IResult> UpdateProjectAsync(
+        Guid id, AidxProjectRequest request, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken)
     {
-        var project = await db.AidxProjects
+        var canonical = await db.AidxProjects
             .Include(p => p.ResearchAreas)
             .Include(p => p.Technologies)
             .Include(p => p.Researchers)
-            .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+            .FirstOrDefaultAsync(p => p.Id == id && p.RevisionOfId == null, cancellationToken);
 
-        if (project is null)
+        if (canonical is null)
         {
             return Results.NotFound();
+        }
+
+        if (request.ExpectedVersion is { } expected && !string.Equals(editing.GetVersion(canonical), expected, StringComparison.Ordinal))
+        {
+            return VersionConflict();
         }
 
         var errors = await ValidateProjectAsync(request, db, cancellationToken);
@@ -715,66 +760,47 @@ public static class AidxAdminEndpoints
         }
 
         var slug = ResolveSlug(request.Slug, request.Title);
-        if (await db.AidxProjects.AnyAsync(p => p.Slug == slug && p.Id != id, cancellationToken))
+        if (slug != canonical.Slug && await db.AidxProjects.AnyAsync(p => p.Slug == slug && p.Id != id && p.RevisionOfId == null, cancellationToken))
         {
             return SlugInUse();
         }
 
-        project.Title = request.Title.Trim();
-        project.Slug = slug;
-        project.ShortDescription = request.ShortDescription.Trim();
-        project.Description = request.Description.Trim();
-        project.StartDate = request.StartDate;
-        project.EndDate = request.EndDate;
-        project.ExternalUrl = AidxEndpointHelpers.Clean(request.ExternalUrl);
-        project.Featured = request.Featured;
+        canonical.Slug = slug;
 
-        SyncProjectRelations(project, request, db);
+        var target = await editing.BeginEditAsync(db.AidxProjects, canonical, AidxWorkflowSharedHelpers.ReparentProject, cancellationToken);
+
+        target.Title = request.Title.Trim();
+        target.ShortDescription = request.ShortDescription.Trim();
+        target.Description = request.Description.Trim();
+        target.StartDate = request.StartDate;
+        target.EndDate = request.EndDate;
+        target.ExternalUrl = AidxEndpointHelpers.Clean(request.ExternalUrl);
+        target.Featured = request.Featured;
+
+        SyncProjectRelations(target, request, db);
         await db.SaveChangesAsync(cancellationToken);
 
-        return Results.Ok(new AidxIdResponse(project.Id, project.Slug, project.Status.ToString()));
+        return Results.Ok(new AidxIdResponse(target.Id, canonical.Slug, target.Status.ToString(), editing.GetVersion(target), target.RevisionOfId));
     }
 
-    private static async Task<IResult> PublishProjectAsync(Guid id, IApplicationDbContext db, IDateTimeProvider clock, CancellationToken cancellationToken)
-    {
-        var project = await db.AidxProjects.FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
-        if (project is null)
-        {
-            return Results.NotFound();
-        }
+    /// <summary>
+    /// Publishes a canonical project: a Draft/ChangesRequested one chains Submit then Approve
+    /// through the shared engine, so this one-click admin action still produces a real, audited
+    /// snapshot. An Archived one republishes directly (no re-review — its content is exactly what
+    /// was already approved; see <see cref="AidxEditorialWorkflow"/>). An already-Published project
+    /// is refused (409) — approving a *pending revision* of an already-published project is a
+    /// different action, done via <c>POST /api/v1/aidx/content/project/{id}/approve</c>, which
+    /// Admin already has access to.
+    /// </summary>
+    private static Task<IResult> PublishProjectAsync(
+        Guid id, ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken) =>
+        PublishThroughWorkflowAsync(db.AidxProjects, id, AidxContentType.Project, onFirstPublish: null, principal, db, editing, cancellationToken);
 
-        if (CannotPublish(project.Status) is { } conflict)
-        {
-            return conflict;
-        }
+    private static Task<IResult> ArchiveProjectAsync(
+        Guid id, ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken) =>
+        ArchiveThroughWorkflowAsync(db.AidxProjects, id, AidxContentType.Project, onArchive: null, principal, db, editing, cancellationToken);
 
-        project.Status = AidxContentStatus.Published;
-        project.PublishedAt ??= clock.UtcNow;
-        await db.SaveChangesAsync(cancellationToken);
-
-        return Results.Ok(new AidxIdResponse(project.Id, project.Slug, project.Status.ToString()));
-    }
-
-    private static async Task<IResult> ArchiveProjectAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken)
-    {
-        var project = await db.AidxProjects.FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
-        if (project is null)
-        {
-            return Results.NotFound();
-        }
-
-        if (CannotArchive(project.Status) is { } conflict)
-        {
-            return conflict;
-        }
-
-        project.Status = AidxContentStatus.Archived;
-        await db.SaveChangesAsync(cancellationToken);
-
-        return Results.Ok(new AidxIdResponse(project.Id, project.Slug, project.Status.ToString()));
-    }
-
-    private static async Task<Dictionary<string, string[]>> ValidateProjectAsync(
+    internal static async Task<Dictionary<string, string[]>> ValidateProjectAsync(
         AidxProjectRequest request, IApplicationDbContext db, CancellationToken cancellationToken)
     {
         var errors = new Dictionary<string, string[]>();
@@ -816,7 +842,7 @@ public static class AidxAdminEndpoints
     /// are added. Diffing by key avoids a delete and insert of the same primary key in one
     /// SaveChanges, which would fail.
     /// </summary>
-    private static void SyncProjectRelations(AidxProject project, AidxProjectRequest request, IApplicationDbContext db)
+    internal static void SyncProjectRelations(AidxProject project, AidxProjectRequest request, IApplicationDbContext db)
     {
         var areaIds = (request.ResearchAreaIds ?? []).Distinct().ToHashSet();
         foreach (var stale in project.ResearchAreas.Where(r => !areaIds.Contains(r.ResearchAreaId)).ToList())
@@ -956,6 +982,10 @@ public static class AidxAdminEndpoints
 
     // ---- Publications --------------------------------------------------------
 
+    /// <summary>
+    /// Always creates a Draft. There is no "create as published" shortcut — publishing is a
+    /// separate, explicit, audited action (<see cref="PublishPublicationAsync"/>).
+    /// </summary>
     private static async Task<IResult> CreatePublicationAsync(AidxPublicationRequest request, IApplicationDbContext db, CancellationToken cancellationToken)
     {
         var errors = await ValidatePublicationAsync(request, Guid.Empty, db, cancellationToken);
@@ -973,7 +1003,7 @@ public static class AidxAdminEndpoints
             Year = request.Year,
             Doi = AidxEndpointHelpers.Clean(request.Doi),
             ExternalUrl = AidxEndpointHelpers.Clean(request.ExternalUrl),
-            Published = request.Published,
+            Published = false,
         };
 
         SyncAuthors(publication, request.Authors ?? [], db);
@@ -981,20 +1011,32 @@ public static class AidxAdminEndpoints
         db.Add(publication);
         await db.SaveChangesAsync(cancellationToken);
 
-        return Results.Created((string?)null, new AidxIdResponse(publication.Id, null, null));
+        return Results.Created((string?)null, new AidxIdResponse(publication.Id, null, publication.Status.ToString()));
     }
 
-    private static async Task<IResult> UpdatePublicationAsync(Guid id, AidxPublicationRequest request, IApplicationDbContext db, CancellationToken cancellationToken)
+    /// <summary>
+    /// Draft/ChangesRequested publications are edited in place. Editing an already-Published
+    /// publication opens (or reuses) a pending revision instead — see <see cref="UpdateProjectAsync"/>
+    /// for the shared mechanics. <c>Published</c> is never settable from the request; it moves only
+    /// via <see cref="PublishPublicationAsync"/>/<see cref="ArchivePublicationAsync"/>.
+    /// </summary>
+    private static async Task<IResult> UpdatePublicationAsync(
+        Guid id, AidxPublicationRequest request, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken)
     {
-        var publication = await db.AidxPublications
+        var canonical = await db.AidxPublications
             .Include(p => p.Authors)
             .Include(p => p.ResearchAreas)
             .Include(p => p.Projects)
-            .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+            .FirstOrDefaultAsync(p => p.Id == id && p.RevisionOfId == null, cancellationToken);
 
-        if (publication is null)
+        if (canonical is null)
         {
             return Results.NotFound();
+        }
+
+        if (request.ExpectedVersion is { } expected && !string.Equals(editing.GetVersion(canonical), expected, StringComparison.Ordinal))
+        {
+            return VersionConflict();
         }
 
         var errors = await ValidatePublicationAsync(request, id, db, cancellationToken);
@@ -1003,35 +1045,51 @@ public static class AidxAdminEndpoints
             return Results.ValidationProblem(errors);
         }
 
-        publication.Title = request.Title.Trim();
-        publication.Abstract = AidxEndpointHelpers.Clean(request.Abstract);
-        publication.PublicationType = Enum.Parse<AidxPublicationType>(request.PublicationType, ignoreCase: true);
-        publication.Venue = AidxEndpointHelpers.Clean(request.Venue);
-        publication.Year = request.Year;
-        publication.Doi = AidxEndpointHelpers.Clean(request.Doi);
-        publication.ExternalUrl = AidxEndpointHelpers.Clean(request.ExternalUrl);
-        publication.Published = request.Published;
+        var target = await editing.BeginEditAsync(db.AidxPublications, canonical, AidxWorkflowSharedHelpers.ReparentPublication, cancellationToken);
+
+        target.Title = request.Title.Trim();
+        target.Abstract = AidxEndpointHelpers.Clean(request.Abstract);
+        target.PublicationType = Enum.Parse<AidxPublicationType>(request.PublicationType, ignoreCase: true);
+        target.Venue = AidxEndpointHelpers.Clean(request.Venue);
+        target.Year = request.Year;
+        target.Doi = AidxEndpointHelpers.Clean(request.Doi);
+        target.ExternalUrl = AidxEndpointHelpers.Clean(request.ExternalUrl);
 
         // An omitted collection means "unchanged", not "empty". A title-only edit must never remove
-        // authors, areas or projects, so each missing list is rebuilt from the rows already stored.
+        // authors, areas or projects, so each missing list is rebuilt from the rows already on the
+        // row actually being edited (the revision, once one has been opened — not the canonical).
         var effective = request with
         {
-            Authors = request.Authors ?? publication.Authors
+            Authors = request.Authors ?? target.Authors
                 .OrderBy(a => a.Position)
                 .Select(a => new AidxAuthorInput(a.ResearcherId, a.ExternalAuthorName))
                 .ToList(),
-            ResearchAreaIds = request.ResearchAreaIds ?? publication.ResearchAreas.Select(r => r.ResearchAreaId).ToList(),
-            ProjectIds = request.ProjectIds ?? publication.Projects.Select(p => p.ProjectId).ToList(),
+            ResearchAreaIds = request.ResearchAreaIds ?? target.ResearchAreas.Select(r => r.ResearchAreaId).ToList(),
+            ProjectIds = request.ProjectIds ?? target.Projects.Select(p => p.ProjectId).ToList(),
         };
 
-        SyncAuthors(publication, effective.Authors ?? [], db);
-        SyncPublicationLinks(publication, effective, db);
+        SyncAuthors(target, effective.Authors ?? [], db);
+        SyncPublicationLinks(target, effective, db);
         await db.SaveChangesAsync(cancellationToken);
 
-        return Results.Ok(new AidxIdResponse(publication.Id, null, null));
+        return Results.Ok(new AidxIdResponse(target.Id, null, target.Status.ToString(), editing.GetVersion(target), target.RevisionOfId));
     }
 
-    private static async Task<Dictionary<string, string[]>> ValidatePublicationAsync(
+    /// <summary>
+    /// First publish of a never-yet-published Draft publication: chains Submit then Approve through
+    /// the shared engine, which sets <c>Status = Published</c> and, via the engine's
+    /// <c>onFirstPublish</c> hook, <c>Published = true</c> in the same save — the two fields can no
+    /// longer diverge, since nothing else is allowed to write either of them.
+    /// </summary>
+    private static Task<IResult> PublishPublicationAsync(
+        Guid id, ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken) =>
+        PublishThroughWorkflowAsync(db.AidxPublications, id, AidxContentType.Publication, onFirstPublish: p => p.Published = true, principal, db, editing, cancellationToken);
+
+    private static Task<IResult> ArchivePublicationAsync(
+        Guid id, ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken) =>
+        ArchiveThroughWorkflowAsync(db.AidxPublications, id, AidxContentType.Publication, onArchive: p => p.Published = false, principal, db, editing, cancellationToken);
+
+    internal static async Task<Dictionary<string, string[]>> ValidatePublicationAsync(
         AidxPublicationRequest request, Guid excludeId, IApplicationDbContext db, CancellationToken cancellationToken)
     {
         var errors = new Dictionary<string, string[]>();
@@ -1049,7 +1107,9 @@ public static class AidxAdminEndpoints
         }
 
         var doi = AidxEndpointHelpers.Clean(request.Doi);
-        if (doi is not null && await db.AidxPublications.AnyAsync(p => p.Doi == doi && p.Id != excludeId, cancellationToken))
+        // RevisionOfId == null: a revision clone of the row being edited carries the same DOI and
+        // must never be mistaken for a collision with itself.
+        if (doi is not null && await db.AidxPublications.AnyAsync(p => p.Doi == doi && p.Id != excludeId && p.RevisionOfId == null, cancellationToken))
         {
             AidxEndpointHelpers.AddError(errors, "doi", "A publication with this DOI already exists.");
         }
@@ -1099,7 +1159,7 @@ public static class AidxAdminEndpoints
     /// diff-by-key approach as <see cref="SyncProjectRelations"/>, so no primary key is deleted
     /// and re-inserted in one SaveChanges.
     /// </summary>
-    private static void SyncPublicationLinks(AidxPublication publication, AidxPublicationRequest request, IApplicationDbContext db)
+    internal static void SyncPublicationLinks(AidxPublication publication, AidxPublicationRequest request, IApplicationDbContext db)
     {
         var areaIds = (request.ResearchAreaIds ?? []).Distinct().ToHashSet();
         foreach (var stale in publication.ResearchAreas.Where(l => !areaIds.Contains(l.ResearchAreaId)).ToList())
@@ -1130,7 +1190,7 @@ public static class AidxAdminEndpoints
     /// Authors are ordered by position 1..n. Rows are updated in place by position rather than
     /// deleted and re-inserted, since position is part of the primary key.
     /// </summary>
-    private static void SyncAuthors(AidxPublication publication, IReadOnlyList<AidxAuthorInput> authors, IApplicationDbContext db)
+    internal static void SyncAuthors(AidxPublication publication, IReadOnlyList<AidxAuthorInput> authors, IApplicationDbContext db)
     {
         for (var index = 0; index < authors.Count; index++)
         {
@@ -1194,12 +1254,18 @@ public static class AidxAdminEndpoints
         return Results.Created((string?)null, new AidxIdResponse(news.Id, news.Slug, news.Status.ToString()));
     }
 
-    private static async Task<IResult> UpdateNewsAsync(Guid id, AidxNewsRequest request, IApplicationDbContext db, CancellationToken cancellationToken)
+    private static async Task<IResult> UpdateNewsAsync(
+        Guid id, AidxNewsRequest request, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken)
     {
-        var news = await db.AidxNews.FirstOrDefaultAsync(n => n.Id == id, cancellationToken);
-        if (news is null)
+        var canonical = await db.AidxNews.FirstOrDefaultAsync(n => n.Id == id && n.RevisionOfId == null, cancellationToken);
+        if (canonical is null)
         {
             return Results.NotFound();
+        }
+
+        if (request.ExpectedVersion is { } expected && !string.Equals(editing.GetVersion(canonical), expected, StringComparison.Ordinal))
+        {
+            return VersionConflict();
         }
 
         var errors = await ValidateNewsAsync(request, id, db, cancellationToken);
@@ -1208,64 +1274,39 @@ public static class AidxAdminEndpoints
             return Results.ValidationProblem(errors);
         }
 
-        // Public News URLs are stable. A missing slug keeps the stored one, so a title change never rewrites it.
-        var slug = string.IsNullOrWhiteSpace(request.Slug) ? news.Slug : ResolveSlug(request.Slug, request.Title);
-        if (await db.AidxNews.AnyAsync(n => n.Slug == slug && n.Id != id, cancellationToken))
+        // A missing slug keeps the stored one, so a title change never rewrites it. Renaming it is
+        // applied straight to the canonical row regardless of status — it is a routing detail, not
+        // reviewable editorial content, and admins have always been able to move a published item's
+        // URL in one step.
+        var slug = string.IsNullOrWhiteSpace(request.Slug) ? canonical.Slug : ResolveSlug(request.Slug, request.Title);
+        if (slug != canonical.Slug && await db.AidxNews.AnyAsync(n => n.Slug == slug && n.Id != id && n.RevisionOfId == null, cancellationToken))
         {
             return SlugInUse();
         }
 
-        news.Slug = slug;
-        news.Title = request.Title.Trim();
-        news.Summary = request.Summary.Trim();
-        news.Body = request.Body.Trim();
-        news.AuthorResearcherId = request.AuthorResearcherId;
+        canonical.Slug = slug;
+
+        var target = await editing.BeginEditAsync(db.AidxNews, canonical, null, cancellationToken);
+
+        target.Title = request.Title.Trim();
+        target.Summary = request.Summary.Trim();
+        target.Body = request.Body.Trim();
+        target.AuthorResearcherId = request.AuthorResearcherId;
 
         await db.SaveChangesAsync(cancellationToken);
 
-        return Results.Ok(new AidxIdResponse(news.Id, news.Slug, news.Status.ToString()));
+        return Results.Ok(new AidxIdResponse(target.Id, canonical.Slug, target.Status.ToString(), editing.GetVersion(target), target.RevisionOfId));
     }
 
-    private static async Task<IResult> PublishNewsAsync(Guid id, IApplicationDbContext db, IDateTimeProvider clock, CancellationToken cancellationToken)
-    {
-        var news = await db.AidxNews.FirstOrDefaultAsync(n => n.Id == id, cancellationToken);
-        if (news is null)
-        {
-            return Results.NotFound();
-        }
+    private static Task<IResult> PublishNewsAsync(
+        Guid id, ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken) =>
+        PublishThroughWorkflowAsync(db.AidxNews, id, AidxContentType.News, onFirstPublish: null, principal, db, editing, cancellationToken);
 
-        if (CannotPublish(news.Status) is { } conflict)
-        {
-            return conflict;
-        }
+    private static Task<IResult> ArchiveNewsAsync(
+        Guid id, ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken) =>
+        ArchiveThroughWorkflowAsync(db.AidxNews, id, AidxContentType.News, onArchive: null, principal, db, editing, cancellationToken);
 
-        news.Status = AidxContentStatus.Published;
-        news.PublishedAt ??= clock.UtcNow;
-        await db.SaveChangesAsync(cancellationToken);
-
-        return Results.Ok(new AidxIdResponse(news.Id, news.Slug, news.Status.ToString()));
-    }
-
-    private static async Task<IResult> ArchiveNewsAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken)
-    {
-        var news = await db.AidxNews.FirstOrDefaultAsync(n => n.Id == id, cancellationToken);
-        if (news is null)
-        {
-            return Results.NotFound();
-        }
-
-        if (CannotArchive(news.Status) is { } conflict)
-        {
-            return conflict;
-        }
-
-        news.Status = AidxContentStatus.Archived;
-        await db.SaveChangesAsync(cancellationToken);
-
-        return Results.Ok(new AidxIdResponse(news.Id, news.Slug, news.Status.ToString()));
-    }
-
-    private static async Task<Dictionary<string, string[]>> ValidateNewsAsync(
+    internal static async Task<Dictionary<string, string[]>> ValidateNewsAsync(
         AidxNewsRequest request, Guid excludeId, IApplicationDbContext db, CancellationToken cancellationToken)
     {
         var errors = new Dictionary<string, string[]>();
@@ -1317,12 +1358,18 @@ public static class AidxAdminEndpoints
         return Results.Created((string?)null, new AidxIdResponse(evt.Id, evt.Slug, evt.Status.ToString()));
     }
 
-    private static async Task<IResult> UpdateEventAsync(Guid id, AidxEventRequest request, IApplicationDbContext db, CancellationToken cancellationToken)
+    private static async Task<IResult> UpdateEventAsync(
+        Guid id, AidxEventRequest request, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken)
     {
-        var evt = await db.AidxEvents.FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
-        if (evt is null)
+        var canonical = await db.AidxEvents.FirstOrDefaultAsync(e => e.Id == id && e.RevisionOfId == null, cancellationToken);
+        if (canonical is null)
         {
             return Results.NotFound();
+        }
+
+        if (request.ExpectedVersion is { } expected && !string.Equals(editing.GetVersion(canonical), expected, StringComparison.Ordinal))
+        {
+            return VersionConflict();
         }
 
         var errors = ValidateEvent(request);
@@ -1331,66 +1378,42 @@ public static class AidxAdminEndpoints
             return Results.ValidationProblem(errors);
         }
 
-        // Public Event URLs are stable. A missing slug keeps the stored one, so a title change never rewrites it.
-        var slug = string.IsNullOrWhiteSpace(request.Slug) ? evt.Slug : ResolveSlug(request.Slug, request.Title);
-        if (await db.AidxEvents.AnyAsync(e => e.Slug == slug && e.Id != id, cancellationToken))
+        // A missing slug keeps the stored one, so a title change never rewrites it. Renaming it is
+        // applied straight to the canonical row regardless of status — it is a routing detail, not
+        // reviewable editorial content, and admins have always been able to move a published item's
+        // URL in one step.
+        var slug = string.IsNullOrWhiteSpace(request.Slug) ? canonical.Slug : ResolveSlug(request.Slug, request.Title);
+        if (slug != canonical.Slug && await db.AidxEvents.AnyAsync(e => e.Slug == slug && e.Id != id && e.RevisionOfId == null, cancellationToken))
         {
             return SlugInUse();
         }
 
-        evt.Slug = slug;
-        evt.Title = request.Title.Trim();
-        evt.Description = request.Description.Trim();
-        evt.StartsAt = request.StartsAt;
-        evt.EndsAt = request.EndsAt;
-        evt.Location = AidxEndpointHelpers.Clean(request.Location);
-        evt.RegistrationUrl = AidxEndpointHelpers.Clean(request.RegistrationUrl);
-        evt.SpeakerName = AidxEndpointHelpers.Clean(request.SpeakerName);
+        canonical.Slug = slug;
+
+        var target = await editing.BeginEditAsync(db.AidxEvents, canonical, null, cancellationToken);
+
+        target.Title = request.Title.Trim();
+        target.Description = request.Description.Trim();
+        target.StartsAt = request.StartsAt;
+        target.EndsAt = request.EndsAt;
+        target.Location = AidxEndpointHelpers.Clean(request.Location);
+        target.RegistrationUrl = AidxEndpointHelpers.Clean(request.RegistrationUrl);
+        target.SpeakerName = AidxEndpointHelpers.Clean(request.SpeakerName);
 
         await db.SaveChangesAsync(cancellationToken);
 
-        return Results.Ok(new AidxIdResponse(evt.Id, evt.Slug, evt.Status.ToString()));
+        return Results.Ok(new AidxIdResponse(target.Id, canonical.Slug, target.Status.ToString(), editing.GetVersion(target), target.RevisionOfId));
     }
 
-    private static async Task<IResult> PublishEventAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken)
-    {
-        var evt = await db.AidxEvents.FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
-        if (evt is null)
-        {
-            return Results.NotFound();
-        }
+    private static Task<IResult> PublishEventAsync(
+        Guid id, ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken) =>
+        PublishThroughWorkflowAsync(db.AidxEvents, id, AidxContentType.Event, onFirstPublish: null, principal, db, editing, cancellationToken);
 
-        if (CannotPublish(evt.Status) is { } conflict)
-        {
-            return conflict;
-        }
+    private static Task<IResult> ArchiveEventAsync(
+        Guid id, ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken) =>
+        ArchiveThroughWorkflowAsync(db.AidxEvents, id, AidxContentType.Event, onArchive: null, principal, db, editing, cancellationToken);
 
-        evt.Status = AidxContentStatus.Published;
-        await db.SaveChangesAsync(cancellationToken);
-
-        return Results.Ok(new AidxIdResponse(evt.Id, evt.Slug, evt.Status.ToString()));
-    }
-
-    private static async Task<IResult> ArchiveEventAsync(Guid id, IApplicationDbContext db, CancellationToken cancellationToken)
-    {
-        var evt = await db.AidxEvents.FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
-        if (evt is null)
-        {
-            return Results.NotFound();
-        }
-
-        if (CannotArchive(evt.Status) is { } conflict)
-        {
-            return conflict;
-        }
-
-        evt.Status = AidxContentStatus.Archived;
-        await db.SaveChangesAsync(cancellationToken);
-
-        return Results.Ok(new AidxIdResponse(evt.Id, evt.Slug, evt.Status.ToString()));
-    }
-
-    private static Dictionary<string, string[]> ValidateEvent(AidxEventRequest request)
+    internal static Dictionary<string, string[]> ValidateEvent(AidxEventRequest request)
     {
         var errors = new Dictionary<string, string[]>();
         ValidateText(errors, "title", request.Title, 300);
@@ -1522,22 +1545,100 @@ public static class AidxAdminEndpoints
 
     // ---- Shared rules --------------------------------------------------------
 
-    /// <summary>Only a draft or archived item can be published. Returns null when allowed.</summary>
-    private static IResult? CannotPublish(AidxContentStatus status) =>
-        status == AidxContentStatus.Published
-            ? Results.Problem(title: "Already published.", statusCode: StatusCodes.Status409Conflict)
-            : null;
+    private static IResult VersionConflict() =>
+        Results.Problem(title: "This was edited elsewhere. Reload and retry.", statusCode: StatusCodes.Status409Conflict);
 
-    /// <summary>Only a published item can be archived. Returns null when allowed.</summary>
-    private static IResult? CannotArchive(AidxContentStatus status) =>
-        status != AidxContentStatus.Published
-            ? Results.Problem(title: "Only published content can be archived.", statusCode: StatusCodes.Status409Conflict)
-            : null;
+    private static IResult EditOutcomeToResult(AidxEditOutcome outcome) => outcome switch
+    {
+        AidxEditOutcome.VersionConflict => VersionConflict(),
+        AidxEditOutcome.InvalidTransition => Results.Problem(
+            title: "Already published, or not eligible to be published directly — approve its pending revision instead.",
+            statusCode: StatusCodes.Status409Conflict),
+        _ => Results.Forbid(),
+    };
 
-    private static IResult SlugInUse() =>
+    /// <summary>
+    /// Drives a never-yet-published Draft/ChangesRequested row straight to Published in one admin
+    /// call, by chaining the same Submit→Approve transitions the membership-gated workflow uses —
+    /// so this one-click action still creates a real submission snapshot and a Published audit
+    /// entry, rather than a bare field flip with no history. Refuses (409) a row that is already
+    /// Published (use the workflow's approve route for a pending revision) or Archived (the state
+    /// machine has no direct path back to Published).
+    /// </summary>
+    private static async Task<IResult> PublishThroughWorkflowAsync<TContent>(
+        DbSet<TContent> set, Guid id, AidxContentType contentType, Action<TContent>? onFirstPublish,
+        ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken)
+        where TContent : class, IAidxWorkflowContent
+    {
+        var (user, membership, failure) = await AidxWorkflowSharedHelpers.ResolveActorAsync(principal, db, cancellationToken);
+        if (failure is not null)
+        {
+            return failure;
+        }
+
+        var canonical = await set.FirstOrDefaultAsync(c => c.Id == id && c.RevisionOfId == null, cancellationToken);
+        if (canonical is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (canonical.Status is AidxContentStatus.Draft or AidxContentStatus.ChangesRequested)
+        {
+            var submitOutcome = await editing.SubmitAsync(
+                canonical, editing.GetVersion(canonical), contentType, user!.Id, membership?.Id, cancellationToken);
+            if (submitOutcome != AidxEditOutcome.Success)
+            {
+                return EditOutcomeToResult(submitOutcome);
+            }
+        }
+
+        if (canonical.Status is not (AidxContentStatus.Submitted or AidxContentStatus.UnderReview or AidxContentStatus.Archived))
+        {
+            return EditOutcomeToResult(AidxEditOutcome.InvalidTransition);
+        }
+
+        var approveOutcome = await editing.ApproveAsync(
+            canonical, null, editing.GetVersion(canonical), contentType, copyOntoCanonical: null,
+            user!.Id, membership?.Id, cancellationToken, onFirstPublish);
+        if (approveOutcome != AidxEditOutcome.Success)
+        {
+            return EditOutcomeToResult(approveOutcome);
+        }
+
+        return Results.Ok(new AidxIdResponse(canonical.Id, null, canonical.Status.ToString(), editing.GetVersion(canonical)));
+    }
+
+    private static async Task<IResult> ArchiveThroughWorkflowAsync<TContent>(
+        DbSet<TContent> set, Guid id, AidxContentType contentType, Action<TContent>? onArchive,
+        ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken)
+        where TContent : class, IAidxWorkflowContent
+    {
+        var (user, membership, failure) = await AidxWorkflowSharedHelpers.ResolveActorAsync(principal, db, cancellationToken);
+        if (failure is not null)
+        {
+            return failure;
+        }
+
+        var canonical = await set.FirstOrDefaultAsync(c => c.Id == id && c.RevisionOfId == null, cancellationToken);
+        if (canonical is null)
+        {
+            return Results.NotFound();
+        }
+
+        var outcome = await editing.ArchiveAsync(
+            canonical, editing.GetVersion(canonical), contentType, user!.Id, membership?.Id, cancellationToken, onArchive);
+        if (outcome != AidxEditOutcome.Success)
+        {
+            return EditOutcomeToResult(outcome);
+        }
+
+        return Results.Ok(new AidxIdResponse(canonical.Id, null, canonical.Status.ToString(), editing.GetVersion(canonical)));
+    }
+
+    internal static IResult SlugInUse() =>
         Results.Problem(title: "Slug is already in use.", statusCode: StatusCodes.Status409Conflict);
 
-    private static string ResolveSlug(string? requested, string fallbackText) =>
+    internal static string ResolveSlug(string? requested, string fallbackText) =>
         string.IsNullOrWhiteSpace(requested)
             ? AidxSlug.FromText(fallbackText)
             : requested.Trim().ToLowerInvariant();
@@ -1576,7 +1677,7 @@ public static class AidxAdminEndpoints
         }
     }
 
-    private static List<string> NormalizeTechnologies(IReadOnlyList<string>? names) =>
+    internal static List<string> NormalizeTechnologies(IReadOnlyList<string>? names) =>
         (names ?? [])
             .Select(n => n.Trim())
             .Where(n => n.Length > 0)

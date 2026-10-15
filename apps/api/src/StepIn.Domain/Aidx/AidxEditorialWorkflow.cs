@@ -15,7 +15,11 @@ public static class AidxEditorialWorkflow
         [AidxContentStatus.UnderReview] = [AidxContentStatus.ChangesRequested, AidxContentStatus.Published],
         [AidxContentStatus.ChangesRequested] = [AidxContentStatus.Submitted, AidxContentStatus.Draft],
         [AidxContentStatus.Published] = [AidxContentStatus.Archived],
-        [AidxContentStatus.Archived] = [],
+        // An archived item can be republished directly, with no re-review: its content is exactly
+        // what a reviewer already approved, and archiving/republishing is a visibility toggle, not
+        // a content change. This is distinct from the Submitted/UnderReview -> Published path, which
+        // always re-reviews a genuine content change.
+        [AidxContentStatus.Archived] = [AidxContentStatus.Published],
     };
 
     public static bool CanTransition(AidxContentStatus from, AidxContentStatus to) =>

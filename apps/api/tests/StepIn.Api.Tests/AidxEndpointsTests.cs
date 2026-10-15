@@ -332,10 +332,12 @@ public sealed class AidxEndpointsTests(AuthApiFactory factory) : IClassFixture<A
                 year,
                 null,
                 null,
-                true,
                 [new AidxAuthorInput(researcher.Id, null), new AidxAuthorInput(null, "External Co-author")]),
             ct);
         response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = (await response.Content.ReadFromJsonAsync<AidxIdResponse>(ct))!;
+        (await SendAsync(HttpMethod.Post, $"/api/v1/admin/aidx/publications/{created.Id}/publish", adminToken, null, ct))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
 
         var list = await SendAsync(HttpMethod.Get, $"/api/v1/aidx/publications?year={year}&pageSize=50", null, null, ct);
         var page = (await list.Content.ReadFromJsonAsync<AidxPageResponse<AidxPublicationResponse>>(ct))!;
@@ -417,7 +419,7 @@ public sealed class AidxEndpointsTests(AuthApiFactory factory) : IClassFixture<A
         var researcher = await CreateResearcherAsync(adminToken, Unique("Restricted Author"), published: true, ct);
 
         (await SendAsync(HttpMethod.Post, "/api/v1/admin/aidx/publications", adminToken,
-            new AidxPublicationRequest(Unique("Restricted Paper"), null, "Report", null, 2024, null, null, false,
+            new AidxPublicationRequest(Unique("Restricted Paper"), null, "Report", null, 2024, null, null,
                 [new AidxAuthorInput(researcher.Id, null)]), ct)).StatusCode.Should().Be(HttpStatusCode.Created);
 
         using var scope = _factory.Services.CreateScope();

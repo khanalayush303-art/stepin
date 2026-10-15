@@ -207,8 +207,9 @@ public sealed class AidxContractTests(AuthApiFactory factory) : IClassFixture<Au
         for (var i = 0; i < 3; i++)
         {
             var pub = await CreateAsync(adminToken, "/api/v1/admin/aidx/publications",
-                new AidxPublicationRequest(Unique($"Paged {i}"), null, "Report", null, year, null, null, true, null));
+                new AidxPublicationRequest(Unique($"Paged {i}"), null, "Report", null, year, null, null, null));
             pub.Id.Should().NotBe(Guid.Empty);
+            await PublishAsync(adminToken, "publications", pub.Id);
         }
 
         var response = await SendAsync(HttpMethod.Get, $"/api/v1/aidx/publications?year={year}&pageSize=2&page=1", null);
@@ -291,8 +292,9 @@ public sealed class AidxContractTests(AuthApiFactory factory) : IClassFixture<Au
         var year = Random.Shared.Next(1900, 2100);
         var token = Unique("Needle").Split(' ')[1];
         var pub = await CreateAsync(adminToken, "/api/v1/admin/aidx/publications",
-            new AidxPublicationRequest($"Study {token}", "Abstract text.", "ConferencePaper", null, year, null, null, true, null,
+            new AidxPublicationRequest($"Study {token}", "Abstract text.", "ConferencePaper", null, year, null, null, null,
                 ResearchAreaIds: [area.Id]));
+        await PublishAsync(adminToken, "publications", pub.Id);
 
         var byArea = await SendAsync(HttpMethod.Get, $"/api/v1/aidx/publications?year={year}&area={area.Slug}", null);
         var page = (await byArea.Content.ReadFromJsonAsync<AidxPageResponse<AidxPublicationResponse>>(TestContext.Current.CancellationToken))!;
@@ -397,7 +399,7 @@ public sealed class AidxContractTests(AuthApiFactory factory) : IClassFixture<Au
         var adminToken = await IssueAdminTokenAsync();
 
         (await SendAsync(HttpMethod.Post, "/api/v1/admin/aidx/publications", adminToken,
-            new AidxPublicationRequest(Unique("Bad Authors"), null, "Report", null, 2024, null, null, false,
+            new AidxPublicationRequest(Unique("Bad Authors"), null, "Report", null, 2024, null, null,
                 [new AidxAuthorInput(null, null)])))
             .StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
@@ -425,7 +427,7 @@ public sealed class AidxContractTests(AuthApiFactory factory) : IClassFixture<Au
         var adminToken = await IssueAdminTokenAsync();
         var person = await CreatePersonAsync(adminToken, Unique("Listed Author"), "Academic", published: true);
         await CreateAsync(adminToken, "/api/v1/admin/aidx/publications",
-            new AidxPublicationRequest(Unique("Listed Paper"), null, "Report", null, 2023, null, null, false,
+            new AidxPublicationRequest(Unique("Listed Paper"), null, "Report", null, 2023, null, null,
                 [new AidxAuthorInput(person.Id, null)]));
 
         (await SendAsync(HttpMethod.Delete, $"/api/v1/admin/aidx/people/{person.Id}", adminToken))
@@ -439,7 +441,7 @@ public sealed class AidxContractTests(AuthApiFactory factory) : IClassFixture<Au
         var area = await CreateResearchAreaAsync(adminToken, Unique("Cascade Pub Area"));
         var project = await CreateProjectAsync(adminToken, Unique("Cascade Pub Project"));
         var pub = await CreateAsync(adminToken, "/api/v1/admin/aidx/publications",
-            new AidxPublicationRequest(Unique("Cascade Paper"), null, "Report", null, 2022, null, null, false,
+            new AidxPublicationRequest(Unique("Cascade Paper"), null, "Report", null, 2022, null, null,
                 [new AidxAuthorInput(null, "Someone External")], ResearchAreaIds: [area.Id], ProjectIds: [project.Id]));
 
         (await SendAsync(HttpMethod.Delete, $"/api/v1/admin/aidx/publications/{pub.Id}", adminToken))
@@ -460,5 +462,138 @@ public sealed class AidxContractTests(AuthApiFactory factory) : IClassFixture<Au
 
         (await SendAsync(HttpMethod.Delete, $"/api/v1/admin/aidx/events/{Guid.NewGuid()}", adminToken))
             .StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    // ------------------------------------------------- old-CMS-bypass closure ---
+    // These prove the old /api/v1/admin/aidx/* routes can no longer directly overwrite an
+    // already-published row's live content — the actual regression this correction asked for,
+    // not just a redesign described in comments.
+
+    [Fact]
+    public async Task Editing_a_published_project_through_the_old_admin_route_never_touches_the_live_canonical()
+    {
+        var adminToken = await IssueAdminTokenAsync();
+        var originalTitle = Unique("Original Title");
+        var created = await CreateProjectAsync(adminToken, originalTitle);
+        await PublishAsync(adminToken, "projects", created.Id);
+
+        var newTitle = Unique("Edited Title");
+        // Slug is passed explicitly and unchanged: Project's admin endpoint (unlike News/Event)
+        // regenerates the slug from the title whenever one isn't supplied, which is orthogonal to
+        // what this test is actually proving and would otherwise move the public URL too.
+        var putResponse = await SendAsync(HttpMethod.Put, $"/api/v1/admin/aidx/projects/{created.Id}", adminToken,
+            new AidxProjectRequest(newTitle, created.Slug, "Short.", "Long.", null, null, null, false, null, null, null));
+        putResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = (await putResponse.Content.ReadFromJsonAsync<AidxIdResponse>(TestContext.Current.CancellationToken))!;
+
+        body.RevisionOfId.Should().Be(created.Id, "editing an already-published row opens a revision instead of touching it in place");
+        body.RevisionOfId.Should().NotBe(body.Id, "the revision is a separate row, not the canonical one");
+
+        var publicDetail = (await (await SendAsync(HttpMethod.Get, $"/api/v1/aidx/projects/{created.Slug}", null))
+            .Content.ReadFromJsonAsync<AidxProjectDetailResponse>(TestContext.Current.CancellationToken))!;
+        publicDetail.Title.Should().Be(originalTitle, "the public page must be completely unaffected by the unapproved edit");
+        publicDetail.Id.Should().Be(created.Id);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var canonical = await db.AidxProjects.AsNoTracking().SingleAsync(p => p.Id == created.Id, TestContext.Current.CancellationToken);
+        canonical.Title.Should().Be(originalTitle, "the canonical row's own field was never written");
+        var revision = await db.AidxProjects.AsNoTracking().SingleAsync(p => p.Id == body.Id && p.RevisionOfId == created.Id,
+            TestContext.Current.CancellationToken);
+        revision.Title.Should().Be(newTitle, "the edit really did land somewhere — on the revision, not lost");
+    }
+
+    [Fact]
+    public async Task Approving_a_revision_opened_by_the_old_admin_route_publishes_the_edit_in_place()
+    {
+        var adminToken = await IssueAdminTokenAsync();
+        var created = await CreateProjectAsync(adminToken, Unique("Will Be Revised"));
+        await PublishAsync(adminToken, "projects", created.Id);
+
+        var newTitle = Unique("Revised And Approved");
+        var putResponse = await SendAsync(HttpMethod.Put, $"/api/v1/admin/aidx/projects/{created.Id}", adminToken,
+            new AidxProjectRequest(newTitle, created.Slug, "Short.", "Long.", null, null, null, false, null, null, null));
+        var body = (await putResponse.Content.ReadFromJsonAsync<AidxIdResponse>(TestContext.Current.CancellationToken))!;
+
+        // Admin already satisfies every AIDX review check with no membership row — the same
+        // generic workflow routes the membership-gated endpoints use work for Admin unchanged. A
+        // freshly-opened revision starts in Draft and must be submitted before it is approvable,
+        // same as any Contributor's revision.
+        var submit = await SendAsync(HttpMethod.Post, $"/api/v1/aidx/content/project/{body.Id}/submit", adminToken,
+            new AidxWorkflowActionRequest(body.Version!));
+        submit.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using (var scope0 = _factory.Services.CreateScope())
+        {
+            var db0 = scope0.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var tracked = await db0.AidxProjects.FirstAsync(p => p.Id == body.Id, TestContext.Current.CancellationToken);
+            var submittedVersion = db0.Entry(tracked).Property<uint>("xmin").CurrentValue.ToString();
+
+            var approve = await SendAsync(HttpMethod.Post, $"/api/v1/aidx/content/project/{body.Id}/approve", adminToken,
+                new AidxWorkflowActionRequest(submittedVersion));
+            approve.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        var publicDetail = (await (await SendAsync(HttpMethod.Get, $"/api/v1/aidx/projects/{created.Slug}", null))
+            .Content.ReadFromJsonAsync<AidxProjectDetailResponse>(TestContext.Current.CancellationToken))!;
+        publicDetail.Title.Should().Be(newTitle, "the approved revision's fields are now live, on the same stable Id/slug");
+        publicDetail.Id.Should().Be(created.Id);
+    }
+
+    [Fact]
+    public async Task A_stale_version_on_the_old_admin_route_is_rejected_before_any_write()
+    {
+        var adminToken = await IssueAdminTokenAsync();
+        var originalTitle = Unique("Concurrency Guard");
+        var created = await CreateProjectAsync(adminToken, originalTitle);
+
+        var staleVersion = "0"; // xmin never starts at 0, so this can never match the real current value
+        var response = await SendAsync(HttpMethod.Put, $"/api/v1/admin/aidx/projects/{created.Id}", adminToken,
+            new AidxProjectRequest(Unique("Should Not Apply"), null, "Short.", "Long.", null, null, null, false, null, null, null, staleVersion));
+
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var canonical = await db.AidxProjects.AsNoTracking().SingleAsync(p => p.Id == created.Id, TestContext.Current.CancellationToken);
+        canonical.Title.Should().Be(originalTitle, "a version mismatch must be rejected before any field is written");
+    }
+
+    [Fact]
+    public async Task Publishing_a_publication_through_the_admin_route_keeps_Status_and_Published_in_lockstep()
+    {
+        var adminToken = await IssueAdminTokenAsync();
+        var created = await CreateAsync(adminToken, "/api/v1/admin/aidx/publications",
+            new AidxPublicationRequest(Unique("Lockstep Paper"), null, "Report", null, 2024, null, null, null));
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var draft = await db.AidxPublications.AsNoTracking().SingleAsync(p => p.Id == created.Id, TestContext.Current.CancellationToken);
+            draft.Status.Should().Be(AidxContentStatus.Draft);
+            draft.Published.Should().BeFalse("a publication is never created pre-published — there is no field to request it with");
+        }
+
+        (await SendAsync(HttpMethod.Post, $"/api/v1/admin/aidx/publications/{created.Id}/publish", adminToken))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var published = await db.AidxPublications.AsNoTracking().SingleAsync(p => p.Id == created.Id, TestContext.Current.CancellationToken);
+            published.Status.Should().Be(AidxContentStatus.Published);
+            published.Published.Should().BeTrue("the engine's onFirstPublish hook sets both fields in the same save");
+        }
+
+        (await SendAsync(HttpMethod.Post, $"/api/v1/admin/aidx/publications/{created.Id}/archive", adminToken))
+            .StatusCode.Should().Be(HttpStatusCode.OK);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var archived = await db.AidxPublications.AsNoTracking().SingleAsync(p => p.Id == created.Id, TestContext.Current.CancellationToken);
+            archived.Status.Should().Be(AidxContentStatus.Archived);
+            archived.Published.Should().BeFalse("archiving flips both fields back together, never just one");
+        }
     }
 }

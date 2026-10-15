@@ -49,23 +49,9 @@ public static class AidxWorkflowEndpoints
     private static bool TryParseContentType(string contentType, out AidxContentType parsed) =>
         AidxEndpointHelpers.TryParseEnum(contentType, out parsed);
 
-    private static async Task<(ApplicationUser? User, AidxMembership? Membership, IResult? Failure)> ResolveActorAsync(
-        ClaimsPrincipal principal, ApplicationDbContext db, CancellationToken cancellationToken)
-    {
-        var user = await principal.GetCurrentUserAsync(db, cancellationToken);
-        if (user is null)
-        {
-            return (null, null, Results.Unauthorized());
-        }
-
-        if (user.AccountStatus != AccountStatus.Active)
-        {
-            return (user, null, Results.Forbid());
-        }
-
-        var membership = await db.AidxMemberships.FirstOrDefaultAsync(m => m.UserId == user.Id, cancellationToken);
-        return (user, membership, null);
-    }
+    private static Task<(ApplicationUser? User, AidxMembership? Membership, IResult? Failure)> ResolveActorAsync(
+        ClaimsPrincipal principal, ApplicationDbContext db, CancellationToken cancellationToken) =>
+        AidxWorkflowSharedHelpers.ResolveActorAsync(principal, db, cancellationToken);
 
     private static IResult OutcomeToResult(AidxEditOutcome outcome) => outcome switch
     {
@@ -130,13 +116,6 @@ public static class AidxWorkflowEndpoints
         Guid id, ApplicationUser user, AidxMembership? membership, ApplicationDbContext db,
         AidxContentEditingService editing, CancellationToken cancellationToken)
     {
-        void Reparent(AidxProject clone, AidxProject canonical)
-        {
-            clone.ResearchAreas = canonical.ResearchAreas.Select(ra => new AidxProjectResearchArea { ProjectId = clone.Id, ResearchAreaId = ra.ResearchAreaId }).ToList();
-            clone.Technologies = canonical.Technologies.Select(t => new AidxProjectTechnology { ProjectId = clone.Id, Name = t.Name }).ToList();
-            clone.Researchers = canonical.Researchers.Select(r => new AidxProjectResearcher { ProjectId = clone.Id, ResearcherId = r.ResearcherId, Role = r.Role }).ToList();
-        }
-
         var canonical = await db.AidxProjects
             .Include(p => p.ResearchAreas)
             .Include(p => p.Technologies)
@@ -153,7 +132,7 @@ public static class AidxWorkflowEndpoints
             return Results.Forbid();
         }
 
-        var editable = await editing.BeginEditAsync(db.AidxProjects, canonical, Reparent, cancellationToken);
+        var editable = await editing.BeginEditAsync(db.AidxProjects, canonical, AidxWorkflowSharedHelpers.ReparentProject, cancellationToken);
         return Results.Ok(new AidxWorkflowStatusResponse(
             editable.Id, editable.Status.ToString(), editing.GetVersion(editable), editable.RevisionOfId, editable.RevisionNumber));
     }
@@ -162,13 +141,6 @@ public static class AidxWorkflowEndpoints
         Guid id, ApplicationUser user, AidxMembership? membership, ApplicationDbContext db,
         AidxContentEditingService editing, CancellationToken cancellationToken)
     {
-        void Reparent(AidxPublication clone, AidxPublication canonical)
-        {
-            clone.Authors = canonical.Authors.Select(a => new AidxPublicationAuthor { PublicationId = clone.Id, Position = a.Position, ResearcherId = a.ResearcherId, ExternalAuthorName = a.ExternalAuthorName }).ToList();
-            clone.ResearchAreas = canonical.ResearchAreas.Select(ra => new AidxPublicationResearchArea { PublicationId = clone.Id, ResearchAreaId = ra.ResearchAreaId }).ToList();
-            clone.Projects = canonical.Projects.Select(p => new AidxPublicationProject { PublicationId = clone.Id, ProjectId = p.ProjectId }).ToList();
-        }
-
         var canonical = await db.AidxPublications
             .Include(p => p.Authors)
             .Include(p => p.ResearchAreas)
@@ -185,7 +157,7 @@ public static class AidxWorkflowEndpoints
             return Results.Forbid();
         }
 
-        var editable = await editing.BeginEditAsync(db.AidxPublications, canonical, Reparent, cancellationToken);
+        var editable = await editing.BeginEditAsync(db.AidxPublications, canonical, AidxWorkflowSharedHelpers.ReparentPublication, cancellationToken);
         return Results.Ok(new AidxWorkflowStatusResponse(
             editable.Id, editable.Status.ToString(), editing.GetVersion(editable), editable.RevisionOfId, editable.RevisionNumber));
     }

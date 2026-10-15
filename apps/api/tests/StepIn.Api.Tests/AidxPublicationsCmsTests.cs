@@ -101,15 +101,27 @@ public sealed class AidxPublicationsCmsTests(AuthApiFactory factory) : IClassFix
         return (await response.Content.ReadFromJsonAsync<AidxIdResponse>(TestContext.Current.CancellationToken))!.Id;
     }
 
+    /// <summary>
+    /// <paramref name="published"/> is kept as a parameter for minimal call-site churn across this
+    /// file's many tests, but it is no longer forwarded into the request — a publication can no
+    /// longer be created pre-published (see <see cref="AidxPublicationRequest"/>'s own doc comment
+    /// for why). A caller that needs an actually-published row must call <see cref="PublishAsync"/>
+    /// after creating it.
+    /// </summary>
     private static AidxPublicationRequest Pub(string title, bool published, IReadOnlyList<AidxAuthorInput>? authors = null,
         IReadOnlyList<Guid>? areas = null, IReadOnlyList<Guid>? projects = null, int year = 2024, string type = "JournalArticle") =>
-        new(title, "Abstract text.", type, "Venue", year, null, null, published, authors, areas, projects);
+        new(title, "Abstract text.", type, "Venue", year, null, null, authors, areas, projects);
 
     private async Task<AidxIdResponse> CreateAsync(string admin, AidxPublicationRequest request)
     {
         var response = await SendAsync(HttpMethod.Post, Route, admin, request);
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         return (await response.Content.ReadFromJsonAsync<AidxIdResponse>(TestContext.Current.CancellationToken))!;
+    }
+
+    private async Task PublishAsync(string admin, Guid id)
+    {
+        (await SendAsync(HttpMethod.Post, $"{Route}/{id}/publish", admin)).StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     private async Task<AidxAdminPublicationDetailResponse> DetailAsync(string admin, Guid id)
@@ -156,6 +168,7 @@ public sealed class AidxPublicationsCmsTests(AuthApiFactory factory) : IClassFix
         var year = Random.Shared.Next(1950, 2090);
         var hidden = await CreateAsync(admin, Pub(Unique("Hidden paper"), published: false, year: year));
         var shown = await CreateAsync(admin, Pub(Unique("Shown paper"), published: true, year: year));
+        await PublishAsync(admin, shown.Id);
 
         var adminPage = (await (await SendAsync(HttpMethod.Get, $"{Route}?year={year}&pageSize=50", admin))
             .Content.ReadFromJsonAsync<AidxPageResponse<AidxAdminPublicationSummaryResponse>>(TestContext.Current.CancellationToken))!;
@@ -171,7 +184,8 @@ public sealed class AidxPublicationsCmsTests(AuthApiFactory factory) : IClassFix
     {
         var admin = await AdminAsync();
         var year = Random.Shared.Next(1950, 2090);
-        await CreateAsync(admin, Pub(Unique("Leak check paper"), published: true, year: year));
+        var created = await CreateAsync(admin, Pub(Unique("Leak check paper"), published: true, year: year));
+        await PublishAsync(admin, created.Id);
 
         var json = await (await SendAsync(HttpMethod.Get, $"/api/v1/aidx/publications?year={year}", null))
             .Content.ReadAsStringAsync(TestContext.Current.CancellationToken);

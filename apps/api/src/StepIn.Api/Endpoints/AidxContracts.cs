@@ -117,7 +117,8 @@ public sealed record AidxAdminEventDetailResponse(
     string? RegistrationUrl,
     string? SpeakerName,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? UpdatedAt);
+    DateTimeOffset? UpdatedAt,
+    string? Version = null);
 
 // ---- Admin news reads --------------------------------------------------------
 
@@ -144,7 +145,8 @@ public sealed record AidxAdminNewsDetailResponse(
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt,
     Guid? AuthorResearcherId,
-    string? AuthorName);
+    string? AuthorName,
+    string? Version = null);
 
 // ---- Admin publication reads -------------------------------------------------
 
@@ -185,7 +187,9 @@ public sealed record AidxAdminPublicationDetailResponse(
     bool Published,
     IReadOnlyList<AidxAdminPublicationAuthorResponse> Authors,
     IReadOnlyList<Guid> ResearchAreaIds,
-    IReadOnlyList<AidxLinkedProjectResponse> Projects);
+    IReadOnlyList<AidxLinkedProjectResponse> Projects,
+    string Status = "Draft",
+    string? Version = null);
 
 // ---- Admin people reads ------------------------------------------------------
 
@@ -273,16 +277,30 @@ public sealed record AidxAdminProjectDetailResponse(
     DateTimeOffset? PublishedAt,
     IReadOnlyList<Guid> ResearchAreaIds,
     IReadOnlyList<string> Technologies,
-    IReadOnlyList<AidxAdminProjectResearcherResponse> Researchers);
+    IReadOnlyList<AidxAdminProjectResearcherResponse> Researchers,
+    string? Version = null);
 
 public sealed record AidxAdminProjectResearcherResponse(Guid ResearcherId, string DisplayName, string? Role);
 
 // ---- Admin requests and responses ------------------------------------------
 
-public sealed record AidxIdResponse(Guid Id, string? Slug, string? Status);
+/// <summary>
+/// <paramref name="Version"/> and <paramref name="RevisionOfId"/> are set only when the mutation
+/// went through the editorial-workflow engine (<see cref="StepIn.Infrastructure.Aidx.AidxContentEditingService"/>).
+/// A non-null <paramref name="RevisionOfId"/> means the write landed on a pending revision, not the
+/// live canonical row — the canonical's public-facing content is unchanged until that revision is
+/// approved via <c>POST /api/v1/aidx/content/{contentType}/{id}/approve</c>.
+/// </summary>
+public sealed record AidxIdResponse(Guid Id, string? Slug, string? Status, string? Version = null, Guid? RevisionOfId = null);
 
 public sealed record AidxResearchAreaRequest(string Name, string? Slug, string? Description, int SortOrder);
 
+/// <summary>
+/// <paramref name="ExpectedVersion"/> is optional: when supplied, an update is rejected with 409 if
+/// the canonical row has changed since the caller last read it (the same optimistic-concurrency
+/// token used by the membership-gated workflow endpoints). Omitting it skips that check — a known,
+/// reported gap for the legacy Admin CMS forms, which do not yet send it (see aidx-migration-plan.md).
+/// </summary>
 public sealed record AidxProjectRequest(
     string Title,
     string? Slug,
@@ -294,7 +312,8 @@ public sealed record AidxProjectRequest(
     bool Featured,
     IReadOnlyList<Guid>? ResearchAreaIds,
     IReadOnlyList<string>? Technologies,
-    IReadOnlyList<AidxProjectResearcherInput>? Researchers);
+    IReadOnlyList<AidxProjectResearcherInput>? Researchers,
+    string? ExpectedVersion = null);
 
 public sealed record AidxProjectResearcherInput(Guid ResearcherId, string? Role);
 
@@ -310,6 +329,14 @@ public sealed record AidxResearcherRequest(
     string? WebsiteUrl,
     bool Published);
 
+/// <summary>
+/// There is deliberately no <c>Published</c> field here: a client can never set a publication's live
+/// status directly. Every publication is created Draft and moves to Published only through
+/// <c>POST /api/v1/admin/aidx/publications/{id}/publish</c>, which drives it through the same
+/// editorial-workflow engine as every other content type and keeps the legacy <c>Published</c> bool
+/// and the new <c>Status</c> enum in lockstep — removing the two-independent-fields bypass that
+/// previously let them diverge.
+/// </summary>
 public sealed record AidxPublicationRequest(
     string Title,
     string? Abstract,
@@ -318,15 +345,15 @@ public sealed record AidxPublicationRequest(
     int Year,
     string? Doi,
     string? ExternalUrl,
-    bool Published,
     IReadOnlyList<AidxAuthorInput>? Authors,
     IReadOnlyList<Guid>? ResearchAreaIds = null,
-    IReadOnlyList<Guid>? ProjectIds = null);
+    IReadOnlyList<Guid>? ProjectIds = null,
+    string? ExpectedVersion = null);
 
 /// <summary>Exactly one of <see cref="ResearcherId"/> or <see cref="ExternalAuthorName"/> must be set.</summary>
 public sealed record AidxAuthorInput(Guid? ResearcherId, string? ExternalAuthorName);
 
-public sealed record AidxNewsRequest(string Title, string? Slug, string Summary, string Body, Guid? AuthorResearcherId);
+public sealed record AidxNewsRequest(string Title, string? Slug, string Summary, string Body, Guid? AuthorResearcherId, string? ExpectedVersion = null);
 
 public sealed record AidxEventRequest(
     string Title,
@@ -336,4 +363,5 @@ public sealed record AidxEventRequest(
     DateTimeOffset? EndsAt,
     string? Location,
     string? RegistrationUrl,
-    string? SpeakerName);
+    string? SpeakerName,
+    string? ExpectedVersion = null);

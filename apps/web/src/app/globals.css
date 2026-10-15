@@ -84,6 +84,27 @@
 
   --base-white: #ffffff;
   --base-black: #000000;
+
+  /* AIDX Lab accent primitives. Not yet mirrored in the Figma source-of-truth
+     file (see aidx-migration-plan.md) — a deliberate, reported gap, not an
+     oversight. Layered on top of the platform scale below; never replaces
+     it, and never used outside AIDX-scoped pages/components. */
+  --navy-50: #eef2f7;
+  --navy-100: #d9e2ec;
+  --navy-400: #4f6b8f;
+  --navy-600: #1e3a5f;
+  --navy-700: #16304f;
+  --navy-800: #0f2440;
+  --navy-900: #0a1a30;
+
+  --violet-50: #f5f3ff;
+  --violet-100: #ede9fe;
+  --violet-200: #ddd6fe;
+  --violet-300: #c4b5fd;
+  --violet-500: #8b5cf6;
+  --violet-700: #6d28d9;
+  --violet-900: #4c1d95;
+  --violet-950: #2e1065;
 }
 
 /* ---------------------------------------------------------------------------
@@ -140,6 +161,19 @@
   --sem-info: var(--blue-600);
   --sem-info-subtle: var(--blue-50);
   --sem-info-subtle-fg: var(--blue-700);
+
+  /* AIDX Lab accents — light mode stays the default, primary experience;
+     these are additive accent tokens for the lab's hero band, section
+     dividers, decorative badges and button accents. Not a theme switch. */
+  --aidx-hero-from: var(--navy-800);
+  --aidx-hero-to: var(--violet-700);
+  --aidx-hero-foreground: var(--base-white);
+  --aidx-divider: var(--violet-200);
+  --aidx-badge: var(--violet-50);
+  --aidx-badge-foreground: var(--violet-700);
+  --aidx-accent-button: var(--navy-700);
+  --aidx-accent-button-hover: var(--navy-800);
+  --aidx-accent-button-foreground: var(--base-white);
 }
 
 /* Dark mode — mirrors the Figma "Dark" mode of the Color collection. */
@@ -193,6 +227,18 @@
   --sem-info: var(--blue-400);
   --sem-info-subtle: var(--blue-950);
   --sem-info-subtle-fg: var(--blue-400);
+
+  /* AIDX accents re-tuned for the existing dark surface — same mechanism,
+     no second dark system. */
+  --aidx-hero-from: var(--navy-900);
+  --aidx-hero-to: var(--violet-900);
+  --aidx-hero-foreground: var(--base-white);
+  --aidx-divider: var(--violet-900);
+  --aidx-badge: var(--violet-950);
+  --aidx-badge-foreground: var(--violet-300);
+  --aidx-accent-button: var(--violet-500);
+  --aidx-accent-button-hover: var(--violet-300);
+  --aidx-accent-button-foreground: var(--navy-900);
 }
 
 /* ---------------------------------------------------------------------------
@@ -249,6 +295,17 @@
   --color-info: var(--sem-info);
   --color-info-subtle: var(--sem-info-subtle);
   --color-info-subtle-fg: var(--sem-info-subtle-fg);
+
+  /* AIDX Lab accents — see section 2 for the light/dark values. */
+  --color-aidx-hero-from: var(--aidx-hero-from);
+  --color-aidx-hero-to: var(--aidx-hero-to);
+  --color-aidx-hero-foreground: var(--aidx-hero-foreground);
+  --color-aidx-divider: var(--aidx-divider);
+  --color-aidx-badge: var(--aidx-badge);
+  --color-aidx-badge-foreground: var(--aidx-badge-foreground);
+  --color-aidx-accent-button: var(--aidx-accent-button);
+  --color-aidx-accent-button-hover: var(--aidx-accent-button-hover);
+  --color-aidx-accent-button-foreground: var(--aidx-accent-button-foreground);
 }
 
 /* ---------------------------------------------------------------------------

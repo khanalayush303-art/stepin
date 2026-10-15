@@ -29,22 +29,27 @@ export default async function AidxHomePage() {
 
   return (
     <>
-      <section className="border-b border-border bg-surface" aria-labelledby="hero-title">
+      <section
+        className="border-b border-border bg-gradient-to-br from-aidx-hero-from to-aidx-hero-to text-aidx-hero-foreground"
+        aria-labelledby="hero-title"
+      >
         <div className="container-page grid gap-8 py-16 lg:grid-cols-[1.4fr_1fr] lg:items-end">
           <div className="space-y-6">
-            <p className="text-caption font-semibold uppercase tracking-wide text-primary">AIDX Lab · part of StepIn</p>
-            <h1 id="hero-title" className="text-h1 text-foreground">
+            <p className="inline-flex w-fit rounded-full bg-aidx-badge px-3 py-1 text-caption font-semibold uppercase tracking-wide text-aidx-badge-foreground">
+              AIDX Lab · part of StepIn
+            </p>
+            <h1 id="hero-title" className="text-h1 text-aidx-hero-foreground">
               Advancing AI and data intelligence through research and collaboration.
             </h1>
-            <p className="max-w-2xl text-body-lg text-muted-foreground">
+            <p className="max-w-2xl text-body-lg text-aidx-hero-foreground/85">
               AIDX Lab brings together research projects, researchers, publications and opportunities in artificial
               intelligence and data science.
             </p>
             <div className="flex flex-wrap gap-3">
-              <Button asChild>
+              <Button asChild className="bg-aidx-accent-button text-aidx-accent-button-foreground hover:bg-aidx-accent-button-hover">
                 <Link href="/aidx/projects">Explore projects</Link>
               </Button>
-              <Button asChild variant="outline">
+              <Button asChild variant="outline" className="border-aidx-hero-foreground/40 bg-transparent text-aidx-hero-foreground hover:bg-aidx-hero-foreground/10">
                 <Link href="/aidx/opportunities">Research opportunities</Link>
               </Button>
             </div>
@@ -59,7 +64,7 @@ export default async function AidxHomePage() {
               <Link
                 key={href}
                 href={href}
-                className="rounded-lg border border-border bg-background p-4 font-medium text-foreground hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                className="rounded-lg border border-aidx-hero-foreground/20 bg-aidx-hero-foreground/10 p-4 font-medium text-aidx-hero-foreground hover:bg-aidx-hero-foreground/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               >
                 {label}
               </Link>

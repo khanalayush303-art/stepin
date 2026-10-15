@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useAuth } from "@clerk/nextjs";
 import { Bookmark, BookmarkCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -73,10 +74,10 @@ export function AidxSaveButton({ contentType, contentId }: { contentType: "proje
   if (!isSignedIn) {
     return (
       <Button variant="outline" size="sm" asChild>
-        <a href="/sign-in">
+        <Link href="/sign-in">
           <Bookmark className="size-4" aria-hidden="true" />
           Sign in to save
-        </a>
+        </Link>
       </Button>
     );
   }

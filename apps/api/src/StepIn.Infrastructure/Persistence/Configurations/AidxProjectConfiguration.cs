@@ -16,6 +16,8 @@ public sealed class AidxProjectConfiguration : IEntityTypeConfiguration<AidxProj
         builder.Property(p => p.Description).HasMaxLength(20000).IsRequired();
         builder.Property(p => p.Status).HasConversion<string>().HasMaxLength(20);
         builder.Property(p => p.ExternalUrl).HasMaxLength(500);
+        builder.Property(p => p.ImageKey).HasMaxLength(500);
+        builder.Property(p => p.ImageAltText).HasMaxLength(300);
 
         // Only canonical rows (RevisionOfId IS NULL) compete for slug uniqueness — a published
         // row and its in-progress revision never collide, since the revision is excluded.

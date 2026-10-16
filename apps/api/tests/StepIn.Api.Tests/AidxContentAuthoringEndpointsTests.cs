@@ -51,6 +51,13 @@ public sealed class AidxContentAuthoringEndpointsTests(AuthApiFactory factory) :
         return await client.SendAsync(request, TestContext.Current.CancellationToken);
     }
 
+    private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request)
+    {
+        using var client = _factory.CreateClient();
+        using var owned = request;
+        return await client.SendAsync(owned, TestContext.Current.CancellationToken);
+    }
+
     private static string Unique(string prefix) => $"{prefix} {Guid.NewGuid():N}";
 
     private async Task<(string Token, Guid UserId)> NewUserAsync()
@@ -299,5 +306,141 @@ public sealed class AidxContentAuthoringEndpointsTests(AuthApiFactory factory) :
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var tracked = await db.AidxProjects.FirstAsync(p => p.Id == id, TestContext.Current.CancellationToken);
         return db.Entry(tracked).Property<uint>("xmin").CurrentValue.ToString();
+    }
+
+    private static byte[] BuildValidPng()
+    {
+        using var bitmap = new SkiaSharp.SKBitmap(4, 4);
+        using var image = SkiaSharp.SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(SkiaSharp.SKEncodedImageFormat.Png, 100);
+        return data.ToArray();
+    }
+
+    private static HttpRequestMessage BuildMultipart(
+        HttpMethod method, string url, string? token, byte[] fileBytes, string fileName, string contentType,
+        IReadOnlyDictionary<string, string>? fields = null)
+    {
+        var request = new HttpRequestMessage(method, url);
+        var form = new MultipartFormDataContent();
+        var fileContent = new ByteArrayContent(fileBytes);
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+        form.Add(fileContent, "file", fileName);
+        if (fields is not null)
+        {
+            foreach (var (name, value) in fields)
+            {
+                form.Add(new StringContent(value), name);
+            }
+        }
+        request.Content = form;
+        if (token is not null)
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        }
+        request.Headers.Add("X-Requested-With", "fetch");
+        return request;
+    }
+
+    /// <summary>
+    /// The full requested validation scenario, end to end against the real HTTP surface: a
+    /// Contributor creates a complete draft (milestones, research area, technologies, team, and an
+    /// image — not just the three bare text fields the earlier lifecycle test used), an Editor
+    /// requests changes, the Contributor edits and resubmits, a different Editor approves, and the
+    /// public page shows every one of those fields and the image. It also proves the two
+    /// authorization boundaries the task explicitly asked not to be assumed: an unrelated
+    /// Contributor cannot read someone else's Draft through the new authoring GET route, and an
+    /// anonymous caller cannot read the Draft's private image before it is published.
+    /// </summary>
+    [Fact]
+    public async Task A_complete_draft_with_milestones_areas_technologies_team_and_image_survives_the_full_review_lifecycle_onto_the_public_page()
+    {
+        var (contributorToken, contributorUserId) = await NewUserAsync();
+        await GrantAsync(contributorUserId, AidxLabRole.Contributor);
+        var (otherContributorToken, otherContributorUserId) = await NewUserAsync();
+        await GrantAsync(otherContributorUserId, AidxLabRole.Contributor);
+        var (editorToken, editorUserId) = await NewUserAsync();
+        await GrantAsync(editorUserId, AidxLabRole.Editor);
+        var (secondEditorToken, secondEditorUserId) = await NewUserAsync();
+        await GrantAsync(secondEditorUserId, AidxLabRole.Editor);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var area = new AidxResearchArea { Name = Unique("Area"), Slug = Unique("area").Replace(' ', '-').ToLowerInvariant() };
+        var researcher = new AidxResearcher { DisplayName = Unique("Researcher"), Slug = Unique("researcher").Replace(' ', '-').ToLowerInvariant(), Category = AidxResearcherCategory.Academic, Published = true };
+        db.AddRange(area, researcher);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var title = Unique("Complete Draft Project");
+        var fullRequest = new AidxProjectRequest(
+            title, null, "Short.", "Long description.", null, null, null, false,
+            [area.Id], ["Python"], [new AidxProjectResearcherInput(researcher.Id, "Lead")], null, "Outcome text.",
+            [new AidxProjectMilestoneInput("Milestone one", "First step.", null, null)]);
+
+        var created = (await (await SendAsync(HttpMethod.Post, "/api/v1/aidx/authoring/projects", contributorToken, fullRequest))
+            .Content.ReadFromJsonAsync<AidxIdResponse>(TestContext.Current.CancellationToken))!;
+
+        // An unrelated Contributor cannot read this Draft through the authoring GET route.
+        (await SendAsync(HttpMethod.Get, $"/api/v1/aidx/authoring/projects/{created.Id}", otherContributorToken))
+            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        // The owner can read it back, and it carries exactly what was sent.
+        var ownerGet = await SendAsync(HttpMethod.Get, $"/api/v1/aidx/authoring/projects/{created.Id}", contributorToken);
+        ownerGet.StatusCode.Should().Be(HttpStatusCode.OK);
+        var ownerDetail = await ownerGet.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        ownerDetail.GetProperty("milestones")[0].GetProperty("title").GetString().Should().Be("Milestone one");
+
+        // Upload an image to the Draft; an anonymous caller must not be able to read it yet.
+        var upload = await SendAsync(BuildMultipart(
+            HttpMethod.Post, $"/api/v1/aidx/authoring/projects/{created.Id}/image", contributorToken, BuildValidPng(), "cover.png", "image/png",
+            new Dictionary<string, string> { ["altText"] = "A diagram of the project." }));
+        upload.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        (await SendAsync(HttpMethod.Get, $"/api/v1/aidx/media/projects/{created.Id}/image", null))
+            .StatusCode.Should().Be(HttpStatusCode.Unauthorized, "an anonymous caller gets 401, not 403, and never a 200");
+
+        // Submit, Editor A requests changes (with a comment), Contributor resubmits, Editor B approves.
+        var afterUpload = await CurrentVersionAsync(created.Id);
+        (await SendAsync(HttpMethod.Post, $"/api/v1/aidx/content/project/{created.Id}/submit", contributorToken,
+            new AidxWorkflowActionRequest(afterUpload))).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var afterSubmit = await CurrentVersionAsync(created.Id);
+        (await SendAsync(HttpMethod.Post, $"/api/v1/aidx/content/project/{created.Id}/request-changes", editorToken,
+            new AidxRequestChangesRequest(afterSubmit, "Please tighten the summary."))).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var afterChangesRequested = await CurrentVersionAsync(created.Id);
+        var editResponse = await SendAsync(HttpMethod.Put, $"/api/v1/aidx/authoring/projects/{created.Id}", contributorToken,
+                fullRequest with { ExpectedVersion = afterChangesRequested });
+        var editResponseBody = await editResponse.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        editResponse.StatusCode.Should().Be(HttpStatusCode.OK, editResponseBody);
+
+        var afterEdit = await CurrentVersionAsync(created.Id);
+        (await SendAsync(HttpMethod.Post, $"/api/v1/aidx/content/project/{created.Id}/submit", contributorToken,
+            new AidxWorkflowActionRequest(afterEdit))).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // The audit trail shows the feedback, correctly attributed, pinned to the right snapshot.
+        var auditResponse = await SendAsync(HttpMethod.Get, $"/api/v1/aidx/content/project/{created.Id}/audit", contributorToken);
+        auditResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var auditEntries = await auditResponse.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        var changesRequestedEntry = auditEntries.EnumerateArray().Single(e => e.GetProperty("action").GetString() == "ChangesRequested");
+        changesRequestedEntry.GetProperty("comment").GetString().Should().Be("Please tighten the summary.");
+
+        var afterResubmit = await CurrentVersionAsync(created.Id);
+        (await SendAsync(HttpMethod.Post, $"/api/v1/aidx/content/project/{created.Id}/approve", secondEditorToken,
+            new AidxWorkflowActionRequest(afterResubmit))).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var slug = (await ReloadProjectAsync(created.Id)).Slug;
+        var publicDetail = await SendAsync(HttpMethod.Get, $"/api/v1/aidx/projects/{slug}", null);
+        publicDetail.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await publicDetail.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        body.GetProperty("outcomes").GetString().Should().Be("Outcome text.");
+        body.GetProperty("technologies").EnumerateArray().Select(t => t.GetString()).Should().Contain("Python");
+        body.GetProperty("researchAreas").EnumerateArray().Select(a => a.GetString()).Should().Contain(area.Name);
+        body.GetProperty("researchers")[0].GetProperty("displayName").GetString().Should().Be(researcher.DisplayName);
+        body.GetProperty("milestones")[0].GetProperty("title").GetString().Should().Be("Milestone one");
+        body.GetProperty("hasImage").GetBoolean().Should().BeTrue();
+
+        // The now-published image is publicly readable.
+        var publicImage = await SendAsync(HttpMethod.Get, $"/api/v1/aidx/media/projects/{created.Id}/image", null);
+        publicImage.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 }

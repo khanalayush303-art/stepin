@@ -21,3 +21,8 @@ public sealed record GrantAidxMembershipRequest(Guid UserId, string Role, Guid? 
 public sealed record UpdateAidxMembershipRequest(string Role, Guid? ScopedResearchAreaId);
 
 public sealed record LinkResearcherToUserRequest(Guid UserId);
+
+/// <summary>Minimal fields needed to pick the right account when granting a membership or linking
+/// a researcher — never exposes anything beyond name/email, and only to someone who already passed
+/// AuthorizeManagerAsync's CanManageMemberships/CanLinkResearcherToUser check.</summary>
+public sealed record AidxUserSearchResultResponse(Guid Id, string Email, string FirstName, string LastName);

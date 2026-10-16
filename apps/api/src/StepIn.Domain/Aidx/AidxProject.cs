@@ -21,6 +21,11 @@ public sealed class AidxProject : Entity, IAidxWorkflowContent
 
     public string? ExternalUrl { get; set; }
 
+    public string? ImageKey { get; set; }
+
+    /// <summary>Required (at the application-validation layer) whenever <see cref="ImageKey"/> is set.</summary>
+    public string? ImageAltText { get; set; }
+
     public bool Featured { get; set; }
 
     public DateTimeOffset? PublishedAt { get; set; }

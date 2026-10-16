@@ -36,11 +36,13 @@ public static class AidxMediaEndpoints
         app.MapGet("/api/v1/aidx/media/people/{id:guid}/image", GetResearcherImageAsync).WithTags("AIDX Media");
 
         var authoring = app.MapGroup("/api/v1/aidx/authoring").WithTags("AIDX Authoring").RequireAuthorization();
+        authoring.MapPost("/projects/{id:guid}/image", UploadProjectImageAsync).DisableAntiforgery();
         authoring.MapPost("/news/{id:guid}/image", UploadNewsImageAsync).DisableAntiforgery();
         authoring.MapPost("/events/{id:guid}/image", UploadEventImageAsync).DisableAntiforgery();
         authoring.MapPost("/publications/{id:guid}/pdf", UploadPublicationPdfAsync).DisableAntiforgery();
 
         var media = app.MapGroup("/api/v1/aidx/media").WithTags("AIDX Media");
+        media.MapGet("/projects/{id:guid}/image", GetProjectImageAsync);
         media.MapGet("/news/{id:guid}/image", GetNewsImageAsync);
         media.MapGet("/events/{id:guid}/image", GetEventImageAsync);
         media.MapGet("/publications/{id:guid}/pdf", GetPublicationPdfAsync);
@@ -112,6 +114,93 @@ public static class AidxMediaEndpoints
             storage, researcher.ProfileImageKey, context,
             etagSeed: $"{researcher.Id}:{researcher.Published}:{researcher.ProfileImageKey}",
             isPublic: researcher.Published, cancellationToken);
+    }
+
+    // ---- Project image (Contributor-authored, revision-aware) ------------------------------
+
+    private static async Task<IResult> UploadProjectImageAsync(
+        Guid id, IFormFile file, [Microsoft.AspNetCore.Mvc.FromForm] string? altText, ClaimsPrincipal principal, ApplicationDbContext db,
+        AidxContentEditingService editing, IAidxMediaStorage storage, CancellationToken cancellationToken)
+    {
+        var (user, membership, failure) = await AidxWorkflowSharedHelpers.ResolveActorAsync(principal, db, cancellationToken);
+        if (failure is not null)
+        {
+            return failure;
+        }
+
+        var canonical = await db.AidxProjects.FirstOrDefaultAsync(p => p.Id == id && p.RevisionOfId == null, cancellationToken);
+        if (canonical is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!AidxPermissions.IsPlatformAdmin(user!))
+        {
+            if (!AidxPermissions.CanEditAsOwner(membership, canonical.CreatedByMembershipId))
+            {
+                return Results.Forbid();
+            }
+
+            if (!(AidxEditorialWorkflow.IsEditableByContributor(canonical.Status) || canonical.Status == AidxContentStatus.Published))
+            {
+                return Results.Problem(title: "This is read-only while it is Submitted or under review.", statusCode: StatusCodes.Status409Conflict);
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(altText))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["altText"] = ["Alt text is required when uploading an image."],
+            });
+        }
+
+        var validation = await AidxMediaValidation.ValidateImageAsync(file, cancellationToken);
+        if (!validation.Success)
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["file"] = [validation.Error!] });
+        }
+
+        var target = await editing.BeginEditAsync(db.AidxProjects, canonical, AidxWorkflowSharedHelpers.ReparentProject, cancellationToken);
+        var oldKey = target.ImageKey;
+        var newKey = await storage.SaveAsync(new MemoryStream(validation.Content!), validation.Extension!, cancellationToken);
+        target.ImageKey = newKey;
+        target.ImageAltText = altText.Trim();
+        await db.SaveChangesAsync(cancellationToken);
+
+        if (oldKey is not null)
+        {
+            await DeleteIfUnreferencedAsync(db, storage, AidxContentType.Project, oldKey, db.AidxProjects.Select(p => p.ImageKey), cancellationToken);
+        }
+
+        return Results.Ok(new AidxMediaUploadResponse(newKey));
+    }
+
+    private static async Task<IResult> GetProjectImageAsync(
+        Guid id, HttpContext context, ApplicationDbContext db, IAidxMediaStorage storage, CancellationToken cancellationToken)
+    {
+        var project = await db.AidxProjects.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id && p.RevisionOfId == null, cancellationToken);
+        if (project?.ImageKey is null)
+        {
+            return Results.NotFound();
+        }
+
+        var isPublic = project.Status == AidxContentStatus.Published;
+        if (!isPublic)
+        {
+            var (user, membership, failure) = await AidxWorkflowSharedHelpers.ResolveActorAsync(context.User, db, cancellationToken);
+            if (failure is not null)
+            {
+                return failure;
+            }
+            if (!AidxPermissions.IsPlatformAdmin(user!) && !AidxPermissions.CanEditAsOwner(membership, project.CreatedByMembershipId))
+            {
+                return Results.Forbid();
+            }
+        }
+
+        return await ServeImageAsync(
+            storage, project.ImageKey, context, etagSeed: $"{project.Id}:{project.Status}:{project.ImageKey}", isPublic, cancellationToken);
     }
 
     // ---- News image (Contributor-authored, revision-aware) ---------------------------------

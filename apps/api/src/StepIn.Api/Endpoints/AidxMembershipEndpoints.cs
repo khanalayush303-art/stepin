@@ -46,6 +46,11 @@ public static class AidxMembershipEndpoints
             .RequireAuthorization()
             .WithName("LinkAidxResearcherToUser");
 
+        app.MapGet("/api/v1/admin/aidx/users", SearchUsersAsync)
+            .WithTags("AIDX Admin")
+            .RequireAuthorization()
+            .WithName("SearchAidxUsers");
+
         return app;
     }
 
@@ -343,5 +348,50 @@ public static class AidxMembershipEndpoints
         await db.SaveChangesAsync(cancellationToken);
 
         return Results.Ok();
+    }
+
+    /// <summary>
+    /// Lets someone who can grant memberships or link researchers find the right account —
+    /// without this, granting a membership had no way to discover a target UserId at all short of
+    /// direct DB access. Requires an actual search term (never returns the full user list) and
+    /// caps results, since email is not unique on ApplicationUser and this is picker support, not
+    /// a general directory.
+    /// </summary>
+    private static async Task<IResult> SearchUsersAsync(
+        string? search, ClaimsPrincipal principal, IApplicationDbContext db, CancellationToken cancellationToken)
+    {
+        var user = await principal.GetCurrentUserAsync(db, cancellationToken);
+        if (user is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        if (user.AccountStatus != AccountStatus.Active)
+        {
+            return Results.Forbid();
+        }
+
+        var membership = await db.AidxMemberships.FirstOrDefaultAsync(m => m.UserId == user.Id, cancellationToken);
+        if (!AidxPermissions.CanManageMemberships(user, membership) && !AidxPermissions.CanLinkResearcherToUser(user, membership))
+        {
+            return Results.Forbid();
+        }
+
+        if (string.IsNullOrWhiteSpace(search) || search.Trim().Length < 2)
+        {
+            return Results.Ok(Array.Empty<AidxUserSearchResultResponse>());
+        }
+
+        var term = search.Trim();
+        var results = await db.Users
+            .Where(u => EF.Functions.ILike(u.Email, $"%{term}%")
+                || EF.Functions.ILike(u.FirstName, $"%{term}%")
+                || EF.Functions.ILike(u.LastName, $"%{term}%"))
+            .OrderBy(u => u.Email)
+            .Take(10)
+            .Select(u => new AidxUserSearchResultResponse(u.Id, u.Email, u.FirstName, u.LastName))
+            .ToListAsync(cancellationToken);
+
+        return Results.Ok(results);
     }
 }

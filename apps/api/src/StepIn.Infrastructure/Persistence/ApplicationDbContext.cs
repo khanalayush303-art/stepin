@@ -129,6 +129,8 @@ public sealed class ApplicationDbContext(
 
     IQueryable<AidxSavedItem> IApplicationDbContext.AidxSavedItems => AidxSavedItems;
 
+    IQueryable<AidxProjectTechnology> IApplicationDbContext.AidxProjectTechnologies => AidxProjectTechnologies;
+
     IQueryable<CandidateProfile> IApplicationDbContext.CandidateProfiles => CandidateProfiles;
 
     IQueryable<CandidateEducation> IApplicationDbContext.CandidateEducations => CandidateEducations;

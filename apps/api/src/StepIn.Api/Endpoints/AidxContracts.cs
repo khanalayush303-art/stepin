@@ -34,7 +34,9 @@ public sealed record AidxProjectSummaryResponse(
     DateOnly? StartDate,
     DateOnly? EndDate,
     DateTimeOffset? PublishedAt,
-    IReadOnlyList<string> ResearchAreas);
+    IReadOnlyList<string> ResearchAreas,
+    bool HasImage = false,
+    string? ImageAltText = null);
 
 public sealed record AidxProjectDetailResponse(
     Guid Id,
@@ -51,7 +53,9 @@ public sealed record AidxProjectDetailResponse(
     IReadOnlyList<string> Technologies,
     IReadOnlyList<AidxProjectResearcherResponse> Researchers,
     string? Outcomes = null,
-    IReadOnlyList<AidxProjectMilestoneResponse>? Milestones = null);
+    IReadOnlyList<AidxProjectMilestoneResponse>? Milestones = null,
+    bool HasImage = false,
+    string? ImageAltText = null);
 
 public sealed record AidxProjectMilestoneResponse(string Title, string? Description, DateOnly? TargetDate, DateOnly? CompletedDate);
 
@@ -82,7 +86,9 @@ public sealed record AidxPublicationResponse(
 
 public sealed record AidxNewsSummaryResponse(Guid Id, string Slug, string Title, string Summary, DateTimeOffset? PublishedAt);
 
-public sealed record AidxNewsDetailResponse(Guid Id, string Slug, string Title, string Summary, string Body, DateTimeOffset? PublishedAt);
+public sealed record AidxNewsDetailResponse(
+    Guid Id, string Slug, string Title, string Summary, string Body, DateTimeOffset? PublishedAt,
+    bool HasImage = false, string? ImageAltText = null);
 
 public sealed record AidxEventResponse(
     Guid Id,
@@ -93,7 +99,9 @@ public sealed record AidxEventResponse(
     DateTimeOffset? EndsAt,
     string? Location,
     string? RegistrationUrl,
-    string? SpeakerName);
+    string? SpeakerName,
+    bool HasImage = false,
+    string? ImageAltText = null);
 
 // ---- Admin event reads -------------------------------------------------------
 
@@ -125,7 +133,8 @@ public sealed record AidxAdminEventDetailResponse(
     DateTimeOffset? UpdatedAt,
     string? Version = null,
     bool HasImage = false,
-    string? ImageAltText = null);
+    string? ImageAltText = null,
+    Guid? RevisionOfId = null);
 
 // ---- Admin news reads --------------------------------------------------------
 
@@ -157,7 +166,8 @@ public sealed record AidxAdminNewsDetailResponse(
     string? AuthorName,
     string? Version = null,
     bool HasImage = false,
-    string? ImageAltText = null);
+    string? ImageAltText = null,
+    Guid? RevisionOfId = null);
 
 // ---- Admin publication reads -------------------------------------------------
 
@@ -203,7 +213,8 @@ public sealed record AidxAdminPublicationDetailResponse(
     IReadOnlyList<AidxLinkedProjectResponse> Projects,
     string Status = "Draft",
     string? Version = null,
-    bool HasPdf = false);
+    bool HasPdf = false,
+    Guid? RevisionOfId = null);
 
 // ---- Admin people reads ------------------------------------------------------
 
@@ -297,7 +308,10 @@ public sealed record AidxAdminProjectDetailResponse(
     IReadOnlyList<AidxAdminProjectResearcherResponse> Researchers,
     string? Version = null,
     string? Outcomes = null,
-    IReadOnlyList<AidxAdminProjectMilestoneResponse>? Milestones = null);
+    IReadOnlyList<AidxAdminProjectMilestoneResponse>? Milestones = null,
+    bool HasImage = false,
+    string? ImageAltText = null,
+    Guid? RevisionOfId = null);
 
 public sealed record AidxAdminProjectResearcherResponse(Guid ResearcherId, string DisplayName, string? Role);
 

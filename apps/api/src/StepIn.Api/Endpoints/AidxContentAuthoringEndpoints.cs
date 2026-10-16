@@ -32,15 +32,19 @@ public static class AidxContentAuthoringEndpoints
             .RequireAuthorization();
 
         group.MapPost("/projects", CreateProjectAsync).WithName("AidxAuthorCreateProject");
+        group.MapGet("/projects/{id:guid}", GetProjectAsync).WithName("AidxAuthorGetProject");
         group.MapPut("/projects/{id:guid}", UpdateProjectAsync).WithName("AidxAuthorUpdateProject");
 
         group.MapPost("/news", CreateNewsAsync).WithName("AidxAuthorCreateNews");
+        group.MapGet("/news/{id:guid}", GetNewsAsync).WithName("AidxAuthorGetNews");
         group.MapPut("/news/{id:guid}", UpdateNewsAsync).WithName("AidxAuthorUpdateNews");
 
         group.MapPost("/events", CreateEventAsync).WithName("AidxAuthorCreateEvent");
+        group.MapGet("/events/{id:guid}", GetEventAsync).WithName("AidxAuthorGetEvent");
         group.MapPut("/events/{id:guid}", UpdateEventAsync).WithName("AidxAuthorUpdateEvent");
 
         group.MapPost("/publications", CreatePublicationAsync).WithName("AidxAuthorCreatePublication");
+        group.MapGet("/publications/{id:guid}", GetPublicationAsync).WithName("AidxAuthorGetPublication");
         group.MapPut("/publications/{id:guid}", UpdatePublicationAsync).WithName("AidxAuthorUpdatePublication");
 
         return app;
@@ -71,6 +75,23 @@ public static class AidxContentAuthoringEndpoints
     /// </summary>
     private static bool IsEditableNow(AidxContentStatus status) =>
         AidxEditorialWorkflow.IsEditableByContributor(status) || status == AidxContentStatus.Published;
+
+    /// <summary>Read access for the authoring GET routes: the owner (so a Contributor can load
+    /// their own draft/submitted/changes-requested row into the edit form and see review feedback
+    /// against it) or anyone who could review it (so an Editor opening the manage queue can
+    /// actually read the submission, not just its title) or Admin.</summary>
+    private static async Task<bool> CanReadAsync(
+        StepIn.Domain.Users.ApplicationUser user, AidxMembership? membership, IAidxWorkflowContent content,
+        AidxContentType type, ApplicationDbContext db, CancellationToken cancellationToken)
+    {
+        if (AidxPermissions.IsPlatformAdmin(user) || AidxPermissions.CanEditAsOwner(membership, content.CreatedByMembershipId))
+        {
+            return true;
+        }
+
+        var areaIds = await AidxWorkflowEndpoints.GetContentAreaIdsAsync(type, content.RevisionOfId ?? content.Id, db, cancellationToken);
+        return AidxWorkflowEndpoints.CanReview(user, membership, content, areaIds);
+    }
 
     // ---- Projects --------------------------------------------------------------------------
 
@@ -119,6 +140,35 @@ public static class AidxContentAuthoringEndpoints
         await db.SaveChangesAsync(cancellationToken);
 
         return Results.Created((string?)null, new AidxIdResponse(project.Id, project.Slug, project.Status.ToString(), editing.GetVersion(project)));
+    }
+
+    private static async Task<IResult> GetProjectAsync(
+        Guid id, ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken)
+    {
+        var (user, membership, failure) = await AidxWorkflowSharedHelpers.ResolveActorAsync(principal, db, cancellationToken);
+        if (failure is not null)
+        {
+            return failure;
+        }
+
+        var project = await db.AidxProjects
+            .Include(p => p.ResearchAreas)
+            .Include(p => p.Technologies)
+            .Include(p => p.Researchers).ThenInclude(r => r.Researcher)
+            .Include(p => p.Milestones)
+            .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+
+        if (project is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!await CanReadAsync(user!, membership, project, AidxContentType.Project, db, cancellationToken))
+        {
+            return NotYourContent();
+        }
+
+        return Results.Ok(AidxAdminEndpoints.BuildProjectDetailResponse(project, editing.GetVersion(project)));
     }
 
     private static async Task<IResult> UpdateProjectAsync(
@@ -237,6 +287,36 @@ public static class AidxContentAuthoringEndpoints
         return Results.Created((string?)null, new AidxIdResponse(news.Id, news.Slug, news.Status.ToString(), editing.GetVersion(news)));
     }
 
+    private static async Task<IResult> GetNewsAsync(
+        Guid id, ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken)
+    {
+        var (user, membership, failure) = await AidxWorkflowSharedHelpers.ResolveActorAsync(principal, db, cancellationToken);
+        if (failure is not null)
+        {
+            return failure;
+        }
+
+        var news = await db.AidxNews.FirstOrDefaultAsync(n => n.Id == id, cancellationToken);
+        if (news is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!await CanReadAsync(user!, membership, news, AidxContentType.News, db, cancellationToken))
+        {
+            return NotYourContent();
+        }
+
+        string? authorName = null;
+        if (news.AuthorResearcherId is { } authorId)
+        {
+            authorName = await db.AidxResearchers.AsNoTracking().Where(r => r.Id == authorId)
+                .Select(r => r.DisplayName).FirstOrDefaultAsync(cancellationToken);
+        }
+
+        return Results.Ok(AidxAdminEndpoints.BuildNewsDetailResponse(news, authorName, editing.GetVersion(news)));
+    }
+
     private static async Task<IResult> UpdateNewsAsync(
         Guid id, AidxNewsRequest request, ClaimsPrincipal principal, ApplicationDbContext db,
         AidxContentEditingService editing, CancellationToken cancellationToken)
@@ -345,6 +425,29 @@ public static class AidxContentAuthoringEndpoints
         return Results.Created((string?)null, new AidxIdResponse(evt.Id, evt.Slug, evt.Status.ToString(), editing.GetVersion(evt)));
     }
 
+    private static async Task<IResult> GetEventAsync(
+        Guid id, ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken)
+    {
+        var (user, membership, failure) = await AidxWorkflowSharedHelpers.ResolveActorAsync(principal, db, cancellationToken);
+        if (failure is not null)
+        {
+            return failure;
+        }
+
+        var evt = await db.AidxEvents.FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
+        if (evt is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!await CanReadAsync(user!, membership, evt, AidxContentType.Event, db, cancellationToken))
+        {
+            return NotYourContent();
+        }
+
+        return Results.Ok(AidxAdminEndpoints.BuildEventDetailResponse(evt, editing.GetVersion(evt)));
+    }
+
     private static async Task<IResult> UpdateEventAsync(
         Guid id, AidxEventRequest request, ClaimsPrincipal principal, ApplicationDbContext db,
         AidxContentEditingService editing, CancellationToken cancellationToken)
@@ -450,6 +553,34 @@ public static class AidxContentAuthoringEndpoints
         await db.SaveChangesAsync(cancellationToken);
 
         return Results.Created((string?)null, new AidxIdResponse(publication.Id, null, publication.Status.ToString(), editing.GetVersion(publication)));
+    }
+
+    private static async Task<IResult> GetPublicationAsync(
+        Guid id, ClaimsPrincipal principal, ApplicationDbContext db, AidxContentEditingService editing, CancellationToken cancellationToken)
+    {
+        var (user, membership, failure) = await AidxWorkflowSharedHelpers.ResolveActorAsync(principal, db, cancellationToken);
+        if (failure is not null)
+        {
+            return failure;
+        }
+
+        var publication = await db.AidxPublications
+            .Include(p => p.Authors).ThenInclude(a => a.Researcher)
+            .Include(p => p.ResearchAreas)
+            .Include(p => p.Projects).ThenInclude(l => l.Project)
+            .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+
+        if (publication is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!await CanReadAsync(user!, membership, publication, AidxContentType.Publication, db, cancellationToken))
+        {
+            return NotYourContent();
+        }
+
+        return Results.Ok(AidxAdminEndpoints.BuildPublicationDetailResponse(publication, editing.GetVersion(publication)));
     }
 
     private static async Task<IResult> UpdatePublicationAsync(

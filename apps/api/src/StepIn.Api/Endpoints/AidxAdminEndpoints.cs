@@ -189,7 +189,15 @@ public static class AidxAdminEndpoints
             return Results.NotFound();
         }
 
-        return Results.Ok(new AidxAdminProjectDetailResponse(
+        return Results.Ok(BuildProjectDetailResponse(project, editing.GetVersion(project)));
+    }
+
+    /// <summary>Shared by the Admin edit-form GET and the Contributor authoring GET
+    /// (<see cref="AidxContentAuthoringEndpoints"/>) — one response shape for one content type,
+    /// not two to keep in sync. Caller is responsible for including ResearchAreas/Technologies/
+    /// Researchers/Milestones and for the ownership/scope check appropriate to who's asking.</summary>
+    internal static AidxAdminProjectDetailResponse BuildProjectDetailResponse(AidxProject project, string version) =>
+        new(
             project.Id,
             project.Title,
             project.Slug,
@@ -207,13 +215,15 @@ public static class AidxAdminEndpoints
                 .OrderBy(r => r.Researcher.DisplayName)
                 .Select(r => new AidxAdminProjectResearcherResponse(r.ResearcherId, r.Researcher.DisplayName, r.Role))
                 .ToList(),
-            editing.GetVersion(project),
+            version,
             project.Outcomes,
             project.Milestones
                 .OrderBy(m => m.SortOrder)
                 .Select(m => new AidxAdminProjectMilestoneResponse(m.Title, m.Description, m.TargetDate, m.CompletedDate))
-                .ToList()));
-    }
+                .ToList(),
+            project.ImageKey is not null,
+            project.ImageAltText,
+            project.RevisionOfId);
 
     private static async Task<IResult> ListPeopleAsync(
         string? search,
@@ -409,7 +419,11 @@ public static class AidxAdminEndpoints
             return Results.NotFound();
         }
 
-        return Results.Ok(new AidxAdminPublicationDetailResponse(
+        return Results.Ok(BuildPublicationDetailResponse(publication, editing.GetVersion(publication)));
+    }
+
+    internal static AidxAdminPublicationDetailResponse BuildPublicationDetailResponse(AidxPublication publication, string version) =>
+        new(
             publication.Id,
             publication.Title,
             publication.Abstract,
@@ -434,9 +448,9 @@ public static class AidxAdminEndpoints
                 .OrderBy(p => p.Title)
                 .ToList(),
             publication.Status.ToString(),
-            editing.GetVersion(publication),
-            publication.PdfKey is not null));
-    }
+            version,
+            publication.PdfKey is not null,
+            publication.RevisionOfId);
 
     private static async Task<IResult> ListNewsAdminAsync(
         string? q,
@@ -511,7 +525,11 @@ public static class AidxAdminEndpoints
                 .FirstOrDefaultAsync(cancellationToken);
         }
 
-        return Results.Ok(new AidxAdminNewsDetailResponse(
+        return Results.Ok(BuildNewsDetailResponse(news, authorName, editing.GetVersion(news)));
+    }
+
+    internal static AidxAdminNewsDetailResponse BuildNewsDetailResponse(AidxNews news, string? authorName, string version) =>
+        new(
             news.Id,
             news.Slug,
             news.Title,
@@ -523,10 +541,10 @@ public static class AidxAdminEndpoints
             news.UpdatedAt,
             news.AuthorResearcherId,
             authorName,
-            editing.GetVersion(news),
+            version,
             news.ImageKey is not null,
-            news.ImageAltText));
-    }
+            news.ImageAltText,
+            news.RevisionOfId);
 
     private static async Task<IResult> ListEventsAdminAsync(
         string? q,
@@ -600,7 +618,11 @@ public static class AidxAdminEndpoints
             return Results.NotFound();
         }
 
-        return Results.Ok(new AidxAdminEventDetailResponse(
+        return Results.Ok(BuildEventDetailResponse(evt, editing.GetVersion(evt)));
+    }
+
+    internal static AidxAdminEventDetailResponse BuildEventDetailResponse(AidxEvent evt, string version) =>
+        new(
             evt.Id,
             evt.Slug,
             evt.Title,
@@ -613,10 +635,10 @@ public static class AidxAdminEndpoints
             evt.SpeakerName,
             evt.CreatedAt,
             evt.UpdatedAt,
-            editing.GetVersion(evt),
+            version,
             evt.ImageKey is not null,
-            evt.ImageAltText));
-    }
+            evt.ImageAltText,
+            evt.RevisionOfId);
 
     /// <summary>Researcher name when linked, otherwise the external name. Shared by list and detail.</summary>
     private static string AuthorDisplayName(AidxPublicationAuthor author) =>
@@ -919,27 +941,44 @@ public static class AidxAdminEndpoints
         }
 
         // Milestones have no client-facing id — the form resends the complete ordered list on
-        // every save, so (unlike the keyed collections above) there is nothing to diff against:
-        // replace the stored set wholesale, in the order sent.
-        foreach (var stale in project.Milestones.ToList())
-        {
-            project.Milestones.Remove(stale);
-            db.RemoveRange(new[] { stale });
-        }
-
+        // every save, so there is nothing to diff by key. Matching by position instead of
+        // deleting and recreating the whole set avoids a real bug that delete-and-recreate hit:
+        // EF's change tracker resurrected a just-deleted AidxProjectMilestone back to Modified
+        // during DetectChanges (its FK still pointed at this same project), so the DELETE EF had
+        // already queued no longer matched any row by the time SaveChanges ran — a
+        // DbUpdateConcurrencyException ("expected to affect 1 row(s), but actually affected 0").
+        // Updating existing rows in place sidesteps that entirely, and is a no-op write (and no
+        // wasted delete+reinsert) on the common case where nothing actually changed.
+        var existingMilestones = project.Milestones.OrderBy(m => m.SortOrder).ToList();
         var milestones = request.Milestones ?? [];
         for (var i = 0; i < milestones.Count; i++)
         {
             var m = milestones[i];
-            project.Milestones.Add(new AidxProjectMilestone
+            if (i < existingMilestones.Count)
             {
-                ProjectId = project.Id,
-                Title = m.Title.Trim(),
-                Description = AidxEndpointHelpers.Clean(m.Description),
-                TargetDate = m.TargetDate,
-                CompletedDate = m.CompletedDate,
-                SortOrder = i,
-            });
+                var existing = existingMilestones[i];
+                existing.Title = m.Title.Trim();
+                existing.Description = AidxEndpointHelpers.Clean(m.Description);
+                existing.TargetDate = m.TargetDate;
+                existing.CompletedDate = m.CompletedDate;
+                existing.SortOrder = i;
+            }
+            else
+            {
+                project.Milestones.Add(new AidxProjectMilestone
+                {
+                    ProjectId = project.Id,
+                    Title = m.Title.Trim(),
+                    Description = AidxEndpointHelpers.Clean(m.Description),
+                    TargetDate = m.TargetDate,
+                    CompletedDate = m.CompletedDate,
+                    SortOrder = i,
+                });
+            }
+        }
+        for (var i = milestones.Count; i < existingMilestones.Count; i++)
+        {
+            db.RemoveRange(new[] { existingMilestones[i] });
         }
     }
 

@@ -20,6 +20,7 @@ public static class AidxPublicEndpoints
         var aidx = app.MapGroup("/api/v1/aidx").WithTags("AIDX");
 
         aidx.MapGet("/research", ListResearchAsync).WithName("ListAidxResearch").WithSummary("Research areas.");
+        aidx.MapGet("/technologies", ListTechnologiesAsync).WithName("ListAidxTechnologies").WithSummary("Distinct technology names already in use, for autocomplete only.");
         aidx.MapGet("/research/{slug}", GetResearchAsync).WithName("GetAidxResearch").WithSummary("One research area.");
         aidx.MapGet("/projects", ListProjectsAsync).WithName("ListAidxProjects").WithSummary("Published AIDX projects.");
         aidx.MapGet("/projects/{slug}", GetProjectAsync).WithName("GetAidxProject").WithSummary("One published AIDX project.");
@@ -52,6 +53,23 @@ public static class AidxPublicEndpoints
             .ToListAsync(cancellationToken);
 
         return Results.Ok(areas);
+    }
+
+    /// <summary>Suggestion data only, deliberately not scoped to Published projects — a technology
+    /// name on a Draft is not sensitive, and the point is to help an author spell it the way it
+    /// was spelled last time, not to control visibility of anything.</summary>
+    private static async Task<IResult> ListTechnologiesAsync(string? search, IApplicationDbContext db, CancellationToken cancellationToken)
+    {
+        var query = db.AidxProjectTechnologies.AsNoTracking().Select(t => t.Name).Distinct();
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(name => EF.Functions.ILike(name, $"%{term}%"));
+        }
+
+        var names = await query.OrderBy(name => name).Take(20).ToListAsync(cancellationToken);
+        return Results.Ok(names);
     }
 
     private static async Task<IResult> GetResearchAsync(string slug, IApplicationDbContext db, CancellationToken cancellationToken)
@@ -160,7 +178,9 @@ public static class AidxPublicEndpoints
             project.Milestones
                 .OrderBy(m => m.SortOrder)
                 .Select(m => new AidxProjectMilestoneResponse(m.Title, m.Description, m.TargetDate, m.CompletedDate))
-                .ToList());
+                .ToList(),
+            project.ImageKey is not null,
+            project.ImageAltText);
 
         return Results.Ok(response);
     }
@@ -313,7 +333,7 @@ public static class AidxPublicEndpoints
         var news = await db.AidxNews
             .AsNoTracking()
             .Where(n => n.Slug == slug && n.Status == AidxContentStatus.Published && n.RevisionOfId == null)
-            .Select(n => new AidxNewsDetailResponse(n.Id, n.Slug, n.Title, n.Summary, n.Body, n.PublishedAt))
+            .Select(n => new AidxNewsDetailResponse(n.Id, n.Slug, n.Title, n.Summary, n.Body, n.PublishedAt, n.ImageKey != null, n.ImageAltText))
             .FirstOrDefaultAsync(cancellationToken);
 
         return news is null ? Results.NotFound() : Results.Ok(news);
@@ -344,7 +364,7 @@ public static class AidxPublicEndpoints
         }
 
         var ordered = query.OrderBy(e => e.StartsAt).ThenBy(e => e.Slug)
-            .Select(e => new AidxEventResponse(e.Id, e.Slug, e.Title, e.Description, e.StartsAt, e.EndsAt, e.Location, e.RegistrationUrl, e.SpeakerName));
+            .Select(e => new AidxEventResponse(e.Id, e.Slug, e.Title, e.Description, e.StartsAt, e.EndsAt, e.Location, e.RegistrationUrl, e.SpeakerName, e.ImageKey != null, e.ImageAltText));
 
         var (items, total) = await AidxEndpointHelpers.PageAsync(ordered, page ?? 1, pageSize ?? AidxEndpointHelpers.DefaultPageSize, cancellationToken);
 
@@ -356,7 +376,7 @@ public static class AidxPublicEndpoints
         var evt = await db.AidxEvents
             .AsNoTracking()
             .Where(e => e.Slug == slug && e.Status == AidxContentStatus.Published && e.RevisionOfId == null)
-            .Select(e => new AidxEventResponse(e.Id, e.Slug, e.Title, e.Description, e.StartsAt, e.EndsAt, e.Location, e.RegistrationUrl, e.SpeakerName))
+            .Select(e => new AidxEventResponse(e.Id, e.Slug, e.Title, e.Description, e.StartsAt, e.EndsAt, e.Location, e.RegistrationUrl, e.SpeakerName, e.ImageKey != null, e.ImageAltText))
             .FirstOrDefaultAsync(cancellationToken);
 
         return evt is null ? Results.NotFound() : Results.Ok(evt);
@@ -440,7 +460,9 @@ public static class AidxPublicEndpoints
         project.StartDate,
         project.EndDate,
         project.PublishedAt,
-        project.ResearchAreas.Select(r => r.ResearchArea.Name).OrderBy(n => n).ToList());
+        project.ResearchAreas.Select(r => r.ResearchArea.Name).OrderBy(n => n).ToList(),
+        project.ImageKey is not null,
+        project.ImageAltText);
 
     private static AidxResearcherResponse ToResearcherResponse(AidxResearcher researcher) => new(
         researcher.Id,

@@ -11,3 +11,6 @@ public sealed record AidxRevisionSummaryResponse(
 
 public sealed record AidxContentSnapshotResponse(
     Guid Id, int SnapshotNumber, Guid? SubmittedByMembershipId, DateTimeOffset CreatedAt, string ContentJson);
+
+public sealed record AidxEditorialAuditEntryResponse(
+    Guid Id, string Action, Guid? SnapshotId, string? Comment, DateTimeOffset CreatedAt, string PerformedByName);

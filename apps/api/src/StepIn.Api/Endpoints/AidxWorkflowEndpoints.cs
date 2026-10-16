@@ -42,6 +42,7 @@ public static class AidxWorkflowEndpoints
         group.MapPost("/discard", DiscardAsync).WithName("AidxDiscardRevision");
         group.MapPost("/claim-ownership", ClaimOwnershipAsync).WithName("AidxClaimOwnership");
         group.MapGet("/revisions", ListRevisionsAsync).WithName("AidxListRevisions");
+        group.MapGet("/audit", ListAuditEntriesAsync).WithName("AidxListAuditEntries");
 
         return app;
     }
@@ -377,6 +378,8 @@ public static class AidxWorkflowEndpoints
         canonical.StartDate = revision.StartDate;
         canonical.EndDate = revision.EndDate;
         canonical.ExternalUrl = revision.ExternalUrl;
+        canonical.ImageKey = revision.ImageKey;
+        canonical.ImageAltText = revision.ImageAltText;
         canonical.Featured = revision.Featured;
         canonical.Outcomes = revision.Outcomes;
         canonical.PublishedAt ??= DateTimeOffset.UtcNow;
@@ -429,25 +432,43 @@ public static class AidxWorkflowEndpoints
             }
         }
 
-        // Milestones have no client-facing id (the admin UI resends the complete ordered list on
-        // every save — see AidxProjectRequest.Milestones), so there is no stable key to diff
-        // against: replace canonical's set wholesale to match the revision's.
-        foreach (var stale in canonical.Milestones.ToList())
+        // Milestones have no client-facing id, so there is no stable key to diff against —
+        // matched by position instead. Deleting and recreating the whole set here hit a real EF
+        // Core bug: the change tracker resurrected a just-deleted AidxProjectMilestone back to
+        // Modified during DetectChanges (its FK still pointed at this same project), so the
+        // DELETE EF had already queued no longer matched any row by the time SaveChanges ran
+        // (DbUpdateConcurrencyException: "expected to affect 1 row(s), but actually affected 0").
+        // Updating rows in place avoids that, and is a no-op write when nothing actually changed.
+        var canonicalMilestones = canonical.Milestones.OrderBy(m => m.SortOrder).ToList();
+        var revisionMilestones = revision.Milestones.OrderBy(m => m.SortOrder).ToList();
+        for (var i = 0; i < revisionMilestones.Count; i++)
         {
-            canonical.Milestones.Remove(stale);
-            db.Remove(stale);
-        }
-        foreach (var m in revision.Milestones.OrderBy(m => m.SortOrder))
-        {
-            canonical.Milestones.Add(new AidxProjectMilestone
+            var m = revisionMilestones[i];
+            if (i < canonicalMilestones.Count)
             {
-                ProjectId = canonical.Id,
-                Title = m.Title,
-                Description = m.Description,
-                TargetDate = m.TargetDate,
-                CompletedDate = m.CompletedDate,
-                SortOrder = m.SortOrder,
-            });
+                var existing = canonicalMilestones[i];
+                existing.Title = m.Title;
+                existing.Description = m.Description;
+                existing.TargetDate = m.TargetDate;
+                existing.CompletedDate = m.CompletedDate;
+                existing.SortOrder = i;
+            }
+            else
+            {
+                canonical.Milestones.Add(new AidxProjectMilestone
+                {
+                    ProjectId = canonical.Id,
+                    Title = m.Title,
+                    Description = m.Description,
+                    TargetDate = m.TargetDate,
+                    CompletedDate = m.CompletedDate,
+                    SortOrder = i,
+                });
+            }
+        }
+        for (var i = revisionMilestones.Count; i < canonicalMilestones.Count; i++)
+        {
+            db.Remove(canonicalMilestones[i]);
         }
     }
 
@@ -572,7 +593,10 @@ public static class AidxWorkflowEndpoints
         return OutcomeToResult(outcome);
     }
 
-    private static bool CanReview(ApplicationUser user, AidxMembership? membership, IAidxWorkflowContent content, IReadOnlyCollection<Guid> areaIds)
+    /// <summary>Also used by <see cref="AidxContentAuthoringEndpoints"/>'s read endpoints, so a
+    /// reviewer can open a Contributor's content to actually read it before approving/rejecting —
+    /// not just see its title in the manage queue.</summary>
+    internal static bool CanReview(ApplicationUser user, AidxMembership? membership, IAidxWorkflowContent content, IReadOnlyCollection<Guid> areaIds)
     {
         if (AidxPermissions.IsPlatformAdmin(user))
         {
@@ -594,7 +618,7 @@ public static class AidxWorkflowEndpoints
         return AidxPermissions.IsWithinEditorScope(membership, areaIds);
     }
 
-    private static async Task<IReadOnlyCollection<Guid>> GetContentAreaIdsAsync(
+    internal static async Task<IReadOnlyCollection<Guid>> GetContentAreaIdsAsync(
         AidxContentType type, Guid canonicalId, ApplicationDbContext db, CancellationToken cancellationToken) => type switch
     {
         AidxContentType.Project => await db.Set<AidxProjectResearchArea>()
@@ -684,5 +708,57 @@ public static class AidxWorkflowEndpoints
             .ToListAsync(cancellationToken);
 
         return Results.Ok(snapshots);
+    }
+
+    // ---- editorial audit trail (review feedback, publish/archive history) ------------------
+
+    /// <summary>
+    /// The audit trail — including "changes requested" feedback comments — was recorded from the
+    /// very first workflow action but never readable through any route: a Contributor had no way
+    /// to see why their submission was sent back, short of direct DB access. Same read access as
+    /// revision history: the content's owner, or anyone who could review it, or Admin.
+    /// </summary>
+    private static async Task<IResult> ListAuditEntriesAsync(
+        string contentType, Guid id, ClaimsPrincipal principal, ApplicationDbContext db, CancellationToken cancellationToken)
+    {
+        if (!TryParseContentType(contentType, out var type))
+        {
+            return Results.NotFound();
+        }
+
+        var (user, membership, failure) = await ResolveActorAsync(principal, db, cancellationToken);
+        if (failure is not null)
+        {
+            return failure;
+        }
+
+        var content = await LoadByIdAsync(type, id, db, cancellationToken);
+        if (content is null)
+        {
+            return Results.NotFound();
+        }
+
+        var canonicalId = content.RevisionOfId ?? content.Id;
+        var areaIds = await GetContentAreaIdsAsync(type, canonicalId, db, cancellationToken);
+        var isOwner = AidxPermissions.CanEditAsOwner(membership, content.CreatedByMembershipId);
+        if (!isOwner && !CanReview(user!, membership, content, areaIds))
+        {
+            return Results.Forbid();
+        }
+
+        // Audit entries are keyed by the canonical SubjectId regardless of which row (canonical or
+        // a since-opened revision) the caller looked this up by — the trail spans the item's whole
+        // history, not just its current row.
+        var entries = await db.AidxEditorialAuditEntries
+            .Where(e => e.ContentType == type && e.SubjectId == canonicalId)
+            .OrderBy(e => e.CreatedAt)
+            .Join(db.Users, e => e.PerformedByUserId, u => u.Id, (e, u) => new { Entry = e, u.FirstName, u.LastName })
+            .ToListAsync(cancellationToken);
+
+        var response = entries.Select(x => new AidxEditorialAuditEntryResponse(
+            x.Entry.Id, x.Entry.Action.ToString(), x.Entry.SnapshotId, x.Entry.Comment, x.Entry.CreatedAt,
+            $"{x.FirstName} {x.LastName}".Trim())).ToList();
+
+        return Results.Ok(response);
     }
 }

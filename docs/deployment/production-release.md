@@ -3,6 +3,88 @@
 Status: **pre-production.** Nothing in this document has been run against production. Each step is
 an operator action, in the order below.
 
+## Release readiness snapshot (2026-10-17, read-only production inspection)
+
+Everything below was read directly from production (`fly status`/`releases`/`image show`/`secrets
+list` — names only, never values — `fly postgres connect` for read-only `SELECT`s, and `fly logs`
+for the already-logged non-secret "Resume storage provider" line) or from a local Docker rebuild
+of the exact current commit. Nothing was changed.
+
+- **Deployed commit:** `feb12cc` (API image label `org.opencontainers.image.revision`), release
+  v19, both machines currently **stopped** (idle scale-to-zero, `fly.toml`'s
+  `min_machines_running = 0` — not an incident). Local `HEAD` is **12 commits ahead**, none pushed.
+- **Applied migrations (11):** up through `20261012131143_AddExperiencePassport`.
+- **Pending migrations (6, all additive — every `DropColumn`/`DropTable` in these files is in
+  `Down()`, never `Up()`):** `AddAidxMembership`, `AddAidxEditorialWorkflow`, `AddAidxCollaboration`,
+  `AddAidxResearcherImageAltText`, `AddAidxNewsEventImageAltText`, `AddAidxProjectImage`.
+- **Data risk is low:** `aidx."AidxProjects"`, `AidxResearchers`, `AidxPublications`, `AidxNews`,
+  `AidxEvents`, `AidxResearchAreas` are all **empty** in production. The `AddAidxEditorialWorkflow`
+  backfill (synthetic snapshot #1 for every currently-`Published` row) therefore affects **zero
+  rows** this release. `stepin."Users"` = 7, `"Jobs"` = 1, `"JobApplications"` = 0.
+- **No production Admin exists** (`stepin."Users"` has 0 rows with `"Role" = 'Admin'`) — unchanged
+  from the prior release's note. The Experience Passport verification queue still has no reviewer.
+- **No AIDX membership exists yet** (`aidx."AidxMemberships"` doesn't exist until migrated) —
+  `aidx-bootstrap-manager` has never been run. **The first LabManager must be named by the release
+  operator** — this runbook does not and should not guess who, since it requires picking a specific
+  person's account.
+- **Release-blocking config gap, found this pass:** production has `Storage__Provider=Supabase`
+  (confirmed via the non-secret "Resume storage provider: Supabase" log line) but **no
+  `Storage__Supabase__AidxMediaBucket` secret**. `AddAidxMediaStorage` (added this phase) throws at
+  startup if `Storage:Provider=Supabase` and any of `Url`/`ServiceKey`/`AidxMediaBucket` is unset —
+  deploying the new image as-is would fail to reach a healthy machine. A new **private** Supabase
+  bucket for AIDX media must be created and its name set via `Storage__Supabase__AidxMediaBucket`
+  **before** the API deploy. (`Storage__Supabase__Url`/`ServiceKey` are reused as-is, nothing new to
+  provision there — see `docs/deployment/aidx-migration-plan.md`.)
+- **Local build/test verification, this commit:** `dotnet build`/`dotnet test` 547/547 (real
+  Testcontainers Postgres, not mocked), `npm run typecheck`/`lint`/`build` all clean, a from-scratch
+  `docker compose build --no-cache` of both `api` and `web` succeeded (the API's `-c Release`
+  publish matches the production Dockerfile path exactly), and the rebuilt containers were brought
+  up locally: `/health/live`/`/health/ready` both 200, the one migration pending in the local dev DB
+  applied cleanly on startup, `/api/v1/jobs` and `/api/v1/aidx/projects` return 200, and
+  membership-gated/admin routes correctly return 401 without a token. This exercises the same
+  author→submit→review→publish code paths the full test suite already covers end to end (see the
+  new `AidxContentAuthoringEndpointsTests` lifecycle test), but is not a substitute for the
+  production smoke tests below, which need a real Clerk session per role.
+- **Frontend/backend currently live and healthy:** `https://stepin-psi.vercel.app/` and
+  `https://stepin-api.fly.dev/health/live`+`/health/ready` all returned 200 as of this check — this
+  is the pre-release baseline to compare against after the release.
+- **Pushing `master` auto-deploys the Vercel project** (`ak-afe1/stepin`, confirmed via `vercel
+  project ls`). The rollout order below accounts for this explicitly: the API is deployed and
+  verified healthy with the new routes/migrations **before** `master` is pushed, so the moment the
+  frontend goes live it is talking to a backend that already understands it — never the other
+  direction.
+
+## Exact rollout sequence for this release (awaiting authorization — nothing below has run)
+
+In order, each gated on the previous step succeeding. "Operator" = whoever runs this with
+production Fly/Vercel/GitHub access; none of these commands have been run by this session.
+
+1. **Backup.** Confirm the newest `pg_data` volume snapshot is recent (one exists from within the
+   last 24h via Fly's automatic daily snapshot, 5-day retention), or take one explicitly right
+   before migrating: `fly volumes snapshots create <pg_data volume id> -a stepin-api-db`.
+2. **AIDX media storage.** Create a new **private** Supabase Storage bucket for AIDX media (do not
+   reuse the resume bucket). Set its name: `fly secrets set Storage__Supabase__AidxMediaBucket=<bucket> -a stepin-api`.
+   (This alone restarts the *currently running old* API with the new secret present — harmless,
+   since old code never reads that key — but it is a production change the operator should expect.)
+3. **Migrate.** `fly ssh console -a stepin-api -C "dotnet StepIn.Api.dll migrate-database 20261015114655_AddAidxProjectImage"`
+   — applies all 6 pending migrations in one invocation, naming the last one as the explicit safety
+   gate (see §2 below for the command's full behavior/exit codes). Verify via the read-only query in
+   §2.
+4. **Deploy the API.** `fly deploy --build-arg GIT_SHA=$(git rev-parse HEAD) -a stepin-api`. This
+   builds and deploys directly from the local checkout — it does **not** require pushing to GitHub
+   first. Verify `/health/live` and `/health/ready`.
+5. **Name the first LabManager.** Only after the operator has decided *who* — `fly ssh console -a stepin-api -C "dotnet StepIn.Api.dll aidx-bootstrap-manager --user-id <Guid>"` (or `--clerk-user-id`). See §4.
+6. **Push `master`.** Only now — this is what triggers the Vercel production deploy. Pushing earlier
+   would put a frontend expecting the new API routes (authoring GET, `/audit`, project images,
+   membership search, `RevisionOfId` fields) in front of the old, not-yet-deployed API. Promote the
+   resulting Vercel deployment to production once its own preview build passes.
+7. **Smoke-test and monitor.** Run the checklist in "Smoke tests" below, including the new AIDX
+   authoring/review/publish flow, then watch `fly logs -a stepin-api` and Vercel logs per
+   "Monitoring" below.
+
+Rollback for each numbered step is the corresponding entry in "Rollback" below — nothing here
+introduces a new rollback path beyond what's already documented.
+
 ## Topology (as observed)
 
 | Part | Where | Notes |
@@ -328,6 +410,25 @@ Run in production after step 5, with a real account for each role:
 - [ ] The opportunity opens at `/jobs/{id}`, a candidate applies, the recruiter sees the application and updates its status.
 - [ ] Resume upload and download work (see Resume storage).
 
+### AIDX authoring/review/publish (this release — needs a real Clerk session per role)
+
+- [ ] As the newly-named LabManager: `/aidx/manage/memberships` loads, search finds a real account,
+      granting a Contributor membership succeeds.
+- [ ] As that Contributor: `/aidx/workspace/projects/new` creates a draft with a milestone, a
+      research area, a technology, a team member, and an uploaded cover image; `/aidx/workspace`
+      lists it; Submit for review succeeds.
+- [ ] As an Editor (grant a second membership first): the item appears in `/aidx/manage`, opening
+      its review detail page shows the real content (not just a title), Request changes with a
+      comment succeeds.
+- [ ] As the Contributor again: the "changes requested" banner shows the real comment; edit and
+      resubmit succeeds.
+- [ ] As the Editor: Approve succeeds; the project's public page (`/aidx/projects/{slug}`) shows the
+      milestone, research area, technology, team member, and image.
+- [ ] Anonymous: the draft's image URL and the authoring GET route both refuse access before
+      publish (401/403), and the published image is reachable after.
+- [ ] `/aidx/manage/memberships` is unreachable (redirects) for an Editor who is not also a
+      LabManager.
+
 ### Career Intelligence (after the 4 migrations above are applied and this release is deployed)
 
 - [ ] `/health/live` and `/health/ready` both healthy.
@@ -408,6 +509,24 @@ as the `migrate-database` target instead of
 step (`aidx-bootstrap-manager`) required before any AIDX lab membership can
 be granted — it is a separate, explicit, one-time operator action, not run
 automatically by this or any migration.
+
+**Update, 2026-10-17 (AIDX authoring/media release — this release):** four
+more migrations are now pending on top of the 6 above:
+`20261014222839_AddAidxCollaboration` (saved items, collaboration
+enquiries, event registration — additive), `20261015051309_AddAidxResearcherImageAltText`,
+`20261015092429_AddAidxNewsEventImageAltText`, and
+`20261015114655_AddAidxProjectImage` (each adds a nullable alt-text column
+and, for the last one, a nullable image-key column, plus an honest
+placeholder backfill scoped to rows that already have an image — see each
+migration file's own comment). All four carry the same additive shape and
+"migrate first" ordering as every migration above. Apply all 10 pending
+migrations in one invocation by naming `20261015114655_AddAidxProjectImage`
+as the `migrate-database` target. **New this release:** production must
+also have `Storage__Supabase__AidxMediaBucket` set before the API deploys
+— see the readiness snapshot at the top of this document — and the first
+AIDX LabManager must be named via `aidx-bootstrap-manager` (distinct from
+`aidx-init-owner` in §4, which creates the system *content-ownership*
+account, not a human membership).
 
 ## Monitoring
 

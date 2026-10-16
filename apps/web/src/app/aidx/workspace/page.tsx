@@ -8,11 +8,10 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Textarea } from "@/components/ui/textarea";
-import { AidxStatusBadge } from "@/components/aidx/aidx-status-badge";
+import { AidxWorkflowStatusBadge } from "@/components/aidx/aidx-workflow-status-badge";
 import { apiClient, formError } from "@/lib/auth/client";
+import { currentVersion, withdraw as withdrawContent, workspaceEditPath, type AidxWorkflowContentType } from "@/lib/aidx/workflow";
 import type { AidxWorkspaceItem, AidxWorkspaceSummary } from "@/lib/aidx/workspace-types";
 
 const STAT_CARDS: { key: keyof AidxWorkspaceSummary; label: string }[] = [
@@ -24,6 +23,13 @@ const STAT_CARDS: { key: keyof AidxWorkspaceSummary; label: string }[] = [
   { key: "myArchived", label: "Archived" },
 ];
 
+const NEW_LINKS: { contentType: AidxWorkflowContentType; label: string; href: string }[] = [
+  { contentType: "project", label: "New project", href: "/aidx/workspace/projects/new" },
+  { contentType: "news", label: "New story", href: "/aidx/workspace/news/new" },
+  { contentType: "event", label: "New event", href: "/aidx/workspace/events/new" },
+  { contentType: "publication", label: "New publication", href: "/aidx/workspace/publications/new" },
+];
+
 export default function AidxWorkspacePage() {
   const { getToken } = useAuth();
   const [summary, setSummary] = React.useState<AidxWorkspaceSummary>();
@@ -32,11 +38,6 @@ export default function AidxWorkspacePage() {
   const [loadError, setLoadError] = React.useState<string>();
   const [actionError, setActionError] = React.useState<string>();
   const [actingOn, setActingOn] = React.useState<string>();
-  const [creating, setCreating] = React.useState(false);
-  const [newTitle, setNewTitle] = React.useState("");
-  const [newShortDescription, setNewShortDescription] = React.useState("");
-  const [newDescription, setNewDescription] = React.useState("");
-  const [createError, setCreateError] = React.useState<string>();
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -61,53 +62,19 @@ export default function AidxWorkspacePage() {
     void load();
   }, [load]);
 
-  async function withdraw(item: AidxWorkspaceItem) {
+  async function onWithdraw(item: AidxWorkspaceItem) {
     setActingOn(item.id);
     setActionError(undefined);
     try {
       const token = await getToken();
-      const detail = await apiClient.get<{ version: string }>(
-        `/api/v1/aidx/content/${item.contentType.toLowerCase()}/${item.id}/begin-edit`,
-        token
-      );
-      await apiClient.post(`/api/v1/aidx/content/${item.contentType.toLowerCase()}/${item.id}/withdraw`, token, {
-        expectedVersion: detail.version,
-      });
+      const type = item.contentType.toLowerCase() as AidxWorkflowContentType;
+      const version = await currentVersion(token, type, item.id);
+      await withdrawContent(token, type, item.id, version);
       await load();
     } catch (error) {
       setActionError(formError(error));
     } finally {
       setActingOn(undefined);
-    }
-  }
-
-  async function createProject(e: React.FormEvent) {
-    e.preventDefault();
-    setCreating(true);
-    setCreateError(undefined);
-    try {
-      const token = await getToken();
-      await apiClient.post("/api/v1/aidx/authoring/projects", token, {
-        title: newTitle,
-        slug: null,
-        shortDescription: newShortDescription,
-        description: newDescription,
-        startDate: null,
-        endDate: null,
-        externalUrl: null,
-        featured: false,
-        researchAreaIds: null,
-        technologies: null,
-        researchers: null,
-      });
-      setNewTitle("");
-      setNewShortDescription("");
-      setNewDescription("");
-      await load();
-    } catch (error) {
-      setCreateError(formError(error));
-    } finally {
-      setCreating(false);
     }
   }
 
@@ -140,28 +107,14 @@ export default function AidxWorkspacePage() {
       </div>
 
       <Card className="space-y-3 p-5">
-        <h2 className="text-h4 text-foreground">Start a new project</h2>
-        <form onSubmit={createProject} className="space-y-3">
-          <Input placeholder="Title" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} required maxLength={200} />
-          <Input
-            placeholder="Short description (shown on listing pages)"
-            value={newShortDescription}
-            onChange={(e) => setNewShortDescription(e.target.value)}
-            required
-            maxLength={500}
-          />
-          <Textarea
-            placeholder="Full description"
-            value={newDescription}
-            onChange={(e) => setNewDescription(e.target.value)}
-            required
-            className="min-h-[6rem]"
-          />
-          {createError ? <Alert tone="error" title="Could not create the project.">{createError}</Alert> : null}
-          <Button type="submit" loading={creating}>
-            Create draft
-          </Button>
-        </form>
+        <h2 className="text-h4 text-foreground">Start something new</h2>
+        <div className="flex flex-wrap gap-3">
+          {NEW_LINKS.map((link) => (
+            <Button key={link.contentType} variant="outline" asChild>
+              <Link href={link.href}>{link.label}</Link>
+            </Button>
+          ))}
+        </div>
       </Card>
 
       <ul className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
@@ -186,25 +139,33 @@ export default function AidxWorkspacePage() {
           {items.map((item) => (
             <div key={item.id} className="flex flex-wrap items-center gap-4 p-4">
               <div className="min-w-0 flex-1">
-                <p className="text-small font-medium text-foreground">{item.title}</p>
+                <Link
+                  href={workspaceEditPath(item.contentType, item.id)}
+                  className="font-medium text-small text-foreground underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                >
+                  {item.title}
+                </Link>
                 <p className="text-caption text-muted-foreground">
                   {item.contentType}
                   {item.revisionOfId ? " · revision in progress" : ""}
                 </p>
               </div>
-              <AidxStatusBadge status={item.status} />
+              <AidxWorkflowStatusBadge status={item.status} />
               {item.contentType === "Project" ? (
                 <Button variant="ghost" size="sm" asChild>
                   <Link href={`/aidx/workspace/enquiries/${item.id}`}>Enquiries</Link>
                 </Button>
               ) : null}
+              {item.contentType === "Event" ? (
+                <Button variant="ghost" size="sm" asChild>
+                  <Link href={`/aidx/workspace/registrations/${item.id}`}>Registrations</Link>
+                </Button>
+              ) : null}
+              <Button variant="outline" size="sm" asChild>
+                <Link href={workspaceEditPath(item.contentType, item.id)}>Edit</Link>
+              </Button>
               {item.status === "Submitted" || item.status === "UnderReview" ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  loading={actingOn === item.id}
-                  onClick={() => withdraw(item)}
-                >
+                <Button variant="outline" size="sm" loading={actingOn === item.id} onClick={() => onWithdraw(item)}>
                   Withdraw
                 </Button>
               ) : null}
@@ -215,7 +176,7 @@ export default function AidxWorkspacePage() {
         <EmptyState
           icon={<Inbox className="size-6" />}
           title="No content yet"
-          description="Nothing has been created under your name yet. Once the AIDX team adds content attributed to you, it will show up here for you to submit and track."
+          description="Start a project, story, event, or publication above — it is saved as your own private draft until you submit it for review."
         />
       )}
     </div>

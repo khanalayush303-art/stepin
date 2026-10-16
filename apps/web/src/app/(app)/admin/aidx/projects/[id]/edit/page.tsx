@@ -10,17 +10,23 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AidxImageUpload } from "@/components/aidx/aidx-image-upload";
+import type { AidxResearcherPickerOption } from "@/components/aidx/aidx-researcher-picker";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { describeAdminError, type AdminOpportunityError } from "@/lib/aidx/admin";
 import {
   archiveAdminProject,
   getAdminProject,
   listResearchAreaOptions,
+  listTechnologyOptions,
+  projectImageUrl,
   publishAdminProject,
   updateAdminProject,
+  uploadAdminProjectImage,
   type AdminProjectDetail,
   type ProjectInput,
 } from "@/lib/aidx/cms";
+import { listAdminPeople } from "@/lib/aidx/people-cms";
 import type { ResearchArea } from "@/lib/aidx/types";
 import { formatDate } from "@/lib/utils";
 import { ADMIN_NAV } from "../../../../_nav";
@@ -58,6 +64,8 @@ export default function EditAidxProjectPage() {
   const [loaded, setLoaded] = React.useState<AdminProjectDetail | null>(null);
   const [value, setValue] = React.useState<ProjectInput | null>(null);
   const [areas, setAreas] = React.useState<ResearchArea[]>([]);
+  const [researchers, setResearchers] = React.useState<AidxResearcherPickerOption[]>([]);
+  const [technologySuggestions, setTechnologySuggestions] = React.useState<string[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState<AdminOpportunityError | null>(null);
   const [saving, setSaving] = React.useState(false);
@@ -74,14 +82,18 @@ export default function EditAidxProjectPage() {
       setLoadError(null);
       try {
         const token = await getToken();
-        const [project, options] = await Promise.all([
+        const [project, options, people, technologies] = await Promise.all([
           getAdminProject(token, id),
           listResearchAreaOptions().catch(() => [] as ResearchArea[]),
+          listAdminPeople(token, { pageSize: 200 }).then((p) => p.items).catch(() => []),
+          listTechnologyOptions().catch(() => [] as string[]),
         ]);
         if (cancelled) return;
         setLoaded(project);
         setValue(toInput(project));
         setAreas(options);
+        setResearchers(people.map((p) => ({ id: p.id, displayName: p.displayName })));
+        setTechnologySuggestions(technologies);
       } catch (caught) {
         if (!cancelled) setLoadError(describeAdminError(caught));
       } finally {
@@ -243,6 +255,22 @@ export default function EditAidxProjectPage() {
               </div>
             </Card>
 
+            <AidxImageUpload
+              imageUrl={loaded.hasImage ? projectImageUrl(loaded.id, reloadKey) : null}
+              currentAltText={loaded.imageAltText}
+              disabled={saving || actionBusy}
+              helpText={
+                loaded.status === "Published"
+                  ? "This project is published, so a new image opens a pending revision — it replaces the live image only once that revision is approved."
+                  : "Shown on this project's public page."
+              }
+              onUpload={async (file, altText) => {
+                const token = await getToken();
+                await uploadAdminProjectImage(token, id, file, altText);
+                setReloadKey((key) => key + 1);
+              }}
+            />
+
             <form
               onSubmit={(event) => {
                 event.preventDefault();
@@ -256,7 +284,8 @@ export default function EditAidxProjectPage() {
                 fieldErrors={fieldErrors}
                 disabled={saving || actionBusy}
                 areas={areas}
-                researcherNames={loaded.researchers.map((r) => (r.role ? `${r.displayName} (${r.role})` : r.displayName))}
+                researchers={researchers}
+                technologySuggestions={technologySuggestions}
               />
               <div className="flex justify-end">
                 <Button type="submit" size="lg" loading={saving} loadingText="Saving…" disabled={actionBusy}>

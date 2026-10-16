@@ -31,6 +31,7 @@ export interface AdminNewsDetail extends AdminNewsSummary {
   version: string | null;
   hasImage: boolean;
   imageAltText: string | null;
+  revisionOfId: string | null;
 }
 
 export interface NewsInput {

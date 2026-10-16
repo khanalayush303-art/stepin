@@ -40,6 +40,7 @@ export interface AdminEventDetail {
   version: string | null;
   hasImage: boolean;
   imageAltText: string | null;
+  revisionOfId: string | null;
 }
 
 export interface EventInput {

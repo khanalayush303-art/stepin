@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useAuth } from "@clerk/nextjs";
 import { CheckCircle2 } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
@@ -8,8 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Textarea } from "@/components/ui/textarea";
-import { AidxStatusBadge } from "@/components/aidx/aidx-status-badge";
+import { AidxWorkflowStatusBadge } from "@/components/aidx/aidx-workflow-status-badge";
 import { apiClient, formError } from "@/lib/auth/client";
 import type { AidxManageSummary, AidxWorkspaceItem } from "@/lib/aidx/workspace-types";
 
@@ -26,9 +26,6 @@ export default function AidxManagePage() {
   const [items, setItems] = React.useState<AidxWorkspaceItem[]>();
   const [loading, setLoading] = React.useState(true);
   const [loadError, setLoadError] = React.useState<string>();
-  const [actionError, setActionError] = React.useState<string>();
-  const [actingOn, setActingOn] = React.useState<string>();
-  const [comments, setComments] = React.useState<Record<string, string>>({});
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -53,55 +50,6 @@ export default function AidxManagePage() {
     void load();
   }, [load]);
 
-  async function currentVersion(item: AidxWorkspaceItem, token: string | null) {
-    const detail = await apiClient.get<{ version: string }>(
-      `/api/v1/aidx/content/${item.contentType.toLowerCase()}/${item.id}/begin-edit`,
-      token
-    );
-    return detail.version;
-  }
-
-  async function approve(item: AidxWorkspaceItem) {
-    setActingOn(item.id);
-    setActionError(undefined);
-    try {
-      const token = await getToken();
-      const version = await currentVersion(item, token);
-      await apiClient.post(`/api/v1/aidx/content/${item.contentType.toLowerCase()}/${item.id}/approve`, token, {
-        expectedVersion: version,
-      });
-      await load();
-    } catch (error) {
-      setActionError(formError(error));
-    } finally {
-      setActingOn(undefined);
-    }
-  }
-
-  async function requestChanges(item: AidxWorkspaceItem) {
-    const comment = comments[item.id]?.trim();
-    if (!comment) {
-      setActionError("Add a comment explaining what needs to change before requesting changes.");
-      return;
-    }
-
-    setActingOn(item.id);
-    setActionError(undefined);
-    try {
-      const token = await getToken();
-      const version = await currentVersion(item, token);
-      await apiClient.post(`/api/v1/aidx/content/${item.contentType.toLowerCase()}/${item.id}/request-changes`, token, {
-        expectedVersion: version,
-        comment,
-      });
-      await load();
-    } catch (error) {
-      setActionError(formError(error));
-    } finally {
-      setActingOn(undefined);
-    }
-  }
-
   if (loading) {
     return (
       <div className="container-page space-y-6 py-10">
@@ -123,9 +71,14 @@ export default function AidxManagePage() {
 
   return (
     <div className="container-page space-y-8 py-10">
-      <div className="space-y-1">
-        <h1 className="text-h2 text-foreground">Manage AIDX</h1>
-        <p className="text-body text-muted-foreground">Content submitted or under review across the lab.</p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="space-y-1">
+          <h1 className="text-h2 text-foreground">Manage AIDX</h1>
+          <p className="text-body text-muted-foreground">Content submitted or under review across the lab.</p>
+        </div>
+        <Button variant="outline" asChild>
+          <Link href="/aidx/manage/memberships">Memberships</Link>
+        </Button>
       </div>
 
       <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -143,45 +96,21 @@ export default function AidxManagePage() {
         })}
       </ul>
 
-      {actionError ? (
-        <Alert tone="error" title="That action didn't go through.">
-          {actionError}
-        </Alert>
-      ) : null}
-
       {items && items.length > 0 ? (
         <Card className="divide-y divide-border p-0">
           {items.map((item) => (
-            <div key={item.id} className="space-y-3 p-4">
-              <div className="flex flex-wrap items-center gap-4">
-                <div className="min-w-0 flex-1">
-                  <p className="text-small font-medium text-foreground">{item.title}</p>
-                  <p className="text-caption text-muted-foreground">
-                    {item.contentType}
-                    {item.revisionOfId ? " · revision" : ""}
-                  </p>
-                </div>
-                <AidxStatusBadge status={item.status} />
-                <Button variant="primary" size="sm" loading={actingOn === item.id} onClick={() => approve(item)}>
-                  Approve
-                </Button>
+            <div key={item.id} className="flex flex-wrap items-center gap-4 p-4">
+              <div className="min-w-0 flex-1">
+                <p className="text-small font-medium text-foreground">{item.title}</p>
+                <p className="text-caption text-muted-foreground">
+                  {item.contentType}
+                  {item.revisionOfId ? " · revision" : ""}
+                </p>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Textarea
-                  placeholder="What needs to change?"
-                  className="min-h-[2.5rem] flex-1"
-                  value={comments[item.id] ?? ""}
-                  onChange={(e) => setComments((prev) => ({ ...prev, [item.id]: e.target.value }))}
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  loading={actingOn === item.id}
-                  onClick={() => requestChanges(item)}
-                >
-                  Request changes
-                </Button>
-              </div>
+              <AidxWorkflowStatusBadge status={item.status} />
+              <Button variant="primary" size="sm" asChild>
+                <Link href={`/aidx/manage/${item.contentType.toLowerCase()}/${item.id}`}>Review</Link>
+              </Button>
             </div>
           ))}
         </Card>

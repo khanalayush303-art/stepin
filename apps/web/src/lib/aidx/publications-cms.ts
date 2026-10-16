@@ -55,6 +55,7 @@ export interface AdminPublicationDetail {
   researchAreaIds: string[];
   projects: { id: string; title: string; slug: string; status: "Draft" | "Published" | "Archived" }[];
   hasPdf: boolean;
+  revisionOfId: string | null;
 }
 
 export interface PublicationAuthorInput {

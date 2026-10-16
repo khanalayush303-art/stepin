@@ -27,6 +27,13 @@ export function listResearchAreaOptions(search?: string) {
   return apiClient.get<ResearchArea[]>(term ? `/api/v1/aidx/research?search=${encodeURIComponent(term)}` : "/api/v1/aidx/research", null);
 }
 
+/** Distinct technology names already in use elsewhere, for autocomplete suggestions only — not
+ * an authoritative or exhaustive list, and never required to be a value from this list. */
+export function listTechnologyOptions(search?: string) {
+  const term = search?.trim();
+  return apiClient.get<string[]>(term ? `/api/v1/aidx/technologies?search=${encodeURIComponent(term)}` : "/api/v1/aidx/technologies", null);
+}
+
 /** Admin view of a research area. Carries the display order so an edit cannot silently reset it. */
 export interface AdminResearchArea extends ResearchArea {
   sortOrder: number;
@@ -103,6 +110,10 @@ export interface AdminProjectDetail {
   researchers: AdminProjectResearcher[];
   outcomes: string | null;
   milestones: ProjectMilestone[];
+  hasImage: boolean;
+  imageAltText: string | null;
+  /** Non-null when this GET returned an open revision row rather than the canonical one. */
+  revisionOfId: string | null;
   /** The optimistic-concurrency token. Sent back as expectedVersion on the next write. */
   version: string | null;
 }
@@ -180,6 +191,20 @@ export function publishAdminProject(token: string | null, id: string, expectedVe
 
 export function archiveAdminProject(token: string | null, id: string, expectedVersion: string | null) {
   return apiClient.post<AidxWriteResult>(`/api/v1/admin/aidx/projects/${id}/archive`, token, { expectedVersion });
+}
+
+/** Editing an already-published project opens a pending revision, same as any other field edit —
+ * the uploaded image does not replace the live one until that revision is approved. */
+export function uploadAdminProjectImage(token: string | null, id: string, file: File, altText: string) {
+  const form = new FormData();
+  form.set("file", file);
+  form.set("altText", altText);
+  return apiClient.postForm<{ storageKey: string }>(`/api/v1/aidx/authoring/projects/${id}/image`, token, form);
+}
+
+export function projectImageUrl(id: string, cacheBust?: number) {
+  const suffix = cacheBust ? `?v=${cacheBust}` : "";
+  return `/api/v1/aidx/media/projects/${id}/image${suffix}`;
 }
 
 function toProjectPayload(input: ProjectInput) {

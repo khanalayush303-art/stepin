@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/layout/page-header";
 import { AidxErrorState } from "@/components/aidx/aidx-ui";
 import { AidxEventRegistration } from "@/components/aidx/aidx-event-registration";
+import { AidxRichText } from "@/components/aidx/aidx-rich-text";
 import { Button } from "@/components/ui/button";
 import { aidxGet, AidxUnavailableError } from "@/lib/aidx/api";
 import { formatDateTime, safeHttpUrl } from "@/lib/aidx/format";
@@ -84,17 +85,7 @@ export default async function EventPage({ params }: Props) {
       </PageHeader>
 
       <div className="container-page max-w-3xl space-y-8 py-12">
-        <div className="space-y-5">
-          {evt.description
-            .split(/\n\s*\n/)
-            .map((block) => block.trim())
-            .filter(Boolean)
-            .map((block, index) => (
-              <p key={index} className="text-body-lg leading-relaxed text-foreground-secondary">
-                {block}
-              </p>
-            ))}
-        </div>
+        <AidxRichText text={evt.description} className="space-y-5" proseClassName="text-body-lg leading-relaxed text-foreground-secondary" />
 
         <div className="flex flex-wrap items-center gap-3">
           {safeHttpUrl(evt.registrationUrl) ? (

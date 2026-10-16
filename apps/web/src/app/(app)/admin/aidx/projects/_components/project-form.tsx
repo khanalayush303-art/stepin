@@ -7,6 +7,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { AidxResearcherPicker, type AidxResearcherPickerOption } from "@/components/aidx/aidx-researcher-picker";
+import { AidxTechnologyPicker } from "@/components/aidx/aidx-technology-picker";
 import type { ProjectInput, ProjectMilestone } from "@/lib/aidx/cms";
 import type { ResearchArea } from "@/lib/aidx/types";
 import { ResearchAreaPicker } from "./research-area-picker";
@@ -26,14 +28,16 @@ export function ProjectForm({
   fieldErrors,
   disabled,
   areas,
-  researcherNames,
+  researchers,
+  technologySuggestions,
 }: {
   value: ProjectInput;
   onChange: (value: ProjectInput) => void;
   fieldErrors: Record<string, string[]>;
   disabled?: boolean;
   areas: ResearchArea[];
-  researcherNames: string[];
+  researchers: AidxResearcherPickerOption[];
+  technologySuggestions: string[];
 }) {
   return (
     <div className="space-y-6">
@@ -151,35 +155,22 @@ export function ProjectForm({
       </Card>
 
       <Card className="space-y-4 p-6">
-        <h2 className="text-h4 text-foreground">Technologies</h2>
-        <FormField id="technologies" label="Technologies" hint="Separate with commas, for example: Python, PyTorch, SQL." error={fieldErrors.technologies?.[0]}>
-          {(props) => (
-            <Input
-              {...props}
-              value={value.technologies.join(", ")}
-              onChange={(event) =>
-                onChange({
-                  ...value,
-                  technologies: event.target.value.split(",").map((t) => t.trim()).filter((t) => t.length > 0),
-                })
-              }
-              disabled={disabled}
-            />
-          )}
-        </FormField>
+        <AidxTechnologyPicker
+          values={value.technologies}
+          suggestions={technologySuggestions}
+          onChange={(technologies) => onChange({ ...value, technologies })}
+          disabled={disabled}
+          error={fieldErrors.technologies?.[0]}
+        />
       </Card>
 
-      <Card className="space-y-3 p-6">
-        <h2 className="text-h4 text-foreground">Team</h2>
-        {researcherNames.length > 0 ? (
-          <p className="text-small text-foreground-secondary">{researcherNames.join(", ")}</p>
-        ) : (
-          <p className="text-small text-muted-foreground">No researchers are linked to this project.</p>
-        )}
-        <p className="text-caption text-muted-foreground">
-          Team links are kept when you save. Adding or removing team members is part of the researcher CMS, which comes
-          in a later phase.
-        </p>
+      <Card className="space-y-4 p-6">
+        <AidxResearcherPicker
+          researchers={researchers}
+          values={value.researchers}
+          onChange={(researchers) => onChange({ ...value, researchers })}
+          disabled={disabled}
+        />
       </Card>
 
       <Card className="space-y-4 p-6">

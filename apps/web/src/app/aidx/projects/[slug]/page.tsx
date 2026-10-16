@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/layout/page-header";
 import { AidxErrorState, Chips } from "@/components/aidx/aidx-ui";
+import { AidxRichText } from "@/components/aidx/aidx-rich-text";
 import { AidxSaveButton } from "@/components/aidx/aidx-save-button";
 import { AidxCollaborationForm } from "@/components/aidx/aidx-collaboration-form";
 import { Badge } from "@/components/ui/badge";
@@ -30,23 +31,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   } catch {
     return { title: "Project" };
   }
-}
-
-/** Splits free text on blank lines so long descriptions read as paragraphs. Text is escaped by React. */
-function Paragraphs({ text }: { text: string }) {
-  return (
-    <>
-      {text
-        .split(/\n\s*\n/)
-        .map((block) => block.trim())
-        .filter(Boolean)
-        .map((block, index) => (
-          <p key={index} className="text-body leading-relaxed text-foreground-secondary">
-            {block}
-          </p>
-        ))}
-    </>
-  );
 }
 
 export default async function ProjectPage({ params }: Props) {
@@ -90,7 +74,7 @@ export default async function ProjectPage({ params }: Props) {
 
       <div className="container-page grid gap-12 py-12 lg:grid-cols-[2fr_1fr]">
         <article className="space-y-6">
-          <Paragraphs text={project.description} />
+          <AidxRichText text={project.description} className="space-y-4" />
 
           {project.milestones.length ? (
             <section aria-labelledby="milestones-heading" className="space-y-3">
@@ -113,7 +97,7 @@ export default async function ProjectPage({ params }: Props) {
                       ) : null}
                     </div>
                     {milestone.description ? (
-                      <p className="mt-1 text-small text-muted-foreground">{milestone.description}</p>
+                      <AidxRichText text={milestone.description} className="mt-1 text-small text-muted-foreground" />
                     ) : null}
                   </li>
                 ))}
@@ -126,7 +110,7 @@ export default async function ProjectPage({ params }: Props) {
               <h2 id="outcomes-heading" className="text-h4 text-foreground">
                 Outcomes
               </h2>
-              <Paragraphs text={project.outcomes} />
+              <AidxRichText text={project.outcomes} className="space-y-4" />
             </section>
           ) : null}
 

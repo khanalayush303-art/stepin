@@ -6,9 +6,11 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import type { AidxResearcherPickerOption } from "@/components/aidx/aidx-researcher-picker";
 import { DashboardShell } from "@/components/dashboard/dashboard-shell";
 import { describeAdminError, type AdminOpportunityError } from "@/lib/aidx/admin";
-import { createAdminProject, listResearchAreaOptions, type ProjectInput } from "@/lib/aidx/cms";
+import { createAdminProject, listResearchAreaOptions, listTechnologyOptions, type ProjectInput } from "@/lib/aidx/cms";
+import { listAdminPeople } from "@/lib/aidx/people-cms";
 import type { ResearchArea } from "@/lib/aidx/types";
 import { ADMIN_NAV } from "../../../_nav";
 import { ProjectForm } from "../_components/project-form";
@@ -35,6 +37,8 @@ export default function NewAidxProjectPage() {
   const { getToken } = useAuth();
   const [value, setValue] = React.useState<ProjectInput>(EMPTY);
   const [areas, setAreas] = React.useState<ResearchArea[]>([]);
+  const [researchers, setResearchers] = React.useState<AidxResearcherPickerOption[]>([]);
+  const [technologySuggestions, setTechnologySuggestions] = React.useState<string[]>([]);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<AdminOpportunityError | null>(null);
 
@@ -42,7 +46,15 @@ export default function NewAidxProjectPage() {
     listResearchAreaOptions()
       .then(setAreas)
       .catch(() => setAreas([]));
-  }, []);
+    listTechnologyOptions()
+      .then(setTechnologySuggestions)
+      .catch(() => setTechnologySuggestions([]));
+    void getToken().then((token) =>
+      listAdminPeople(token, { pageSize: 200 })
+        .then((p) => setResearchers(p.items.map((r) => ({ id: r.id, displayName: r.displayName }))))
+        .catch(() => setResearchers([]))
+    );
+  }, [getToken]);
 
   async function onSave() {
     setSaving(true);
@@ -88,7 +100,15 @@ export default function NewAidxProjectPage() {
           }}
           className="space-y-6"
         >
-          <ProjectForm value={value} onChange={setValue} fieldErrors={fieldErrors} disabled={saving} areas={areas} researcherNames={[]} />
+          <ProjectForm
+            value={value}
+            onChange={setValue}
+            fieldErrors={fieldErrors}
+            disabled={saving}
+            areas={areas}
+            researchers={researchers}
+            technologySuggestions={technologySuggestions}
+          />
           <div className="flex justify-end gap-3">
             <Button variant="outline" asChild>
               <Link href="/admin/aidx/projects">Cancel</Link>

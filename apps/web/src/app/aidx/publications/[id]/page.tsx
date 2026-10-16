@@ -5,6 +5,7 @@ import { PageHeader } from "@/components/layout/page-header";
 import { AidxErrorState } from "@/components/aidx/aidx-ui";
 import { AidxSaveButton } from "@/components/aidx/aidx-save-button";
 import { AidxCitationBlock } from "@/components/aidx/aidx-citation-block";
+import { AidxRichText } from "@/components/aidx/aidx-rich-text";
 import { Badge } from "@/components/ui/badge";
 import { aidxGet, AidxUnavailableError } from "@/lib/aidx/api";
 import { labels, safeHttpUrl } from "@/lib/aidx/format";
@@ -62,10 +63,6 @@ export default async function PublicationPage({ params }: Props) {
 
   const externalUrl = safeHttpUrl(publication.externalUrl);
   const doiUrl = publication.doi ? `https://doi.org/${encodeURI(publication.doi)}` : null;
-  const abstractBlocks = (publication.abstract ?? "")
-    .split(/\n\s*\n/)
-    .map((block) => block.trim())
-    .filter(Boolean);
 
   return (
     <>
@@ -101,12 +98,8 @@ export default async function PublicationPage({ params }: Props) {
             <h2 id="abstract-heading" className="text-h4 text-foreground">
               Abstract
             </h2>
-            {abstractBlocks.length ? (
-              abstractBlocks.map((block, index) => (
-                <p key={index} className="text-body leading-relaxed text-foreground-secondary">
-                  {block}
-                </p>
-              ))
+            {publication.abstract?.trim() ? (
+              <AidxRichText text={publication.abstract} className="space-y-4" />
             ) : (
               <p className="text-body text-muted-foreground">An abstract has not been added yet.</p>
             )}

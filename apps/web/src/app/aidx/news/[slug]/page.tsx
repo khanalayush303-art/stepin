@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/layout/page-header";
 import { AidxErrorState } from "@/components/aidx/aidx-ui";
+import { AidxRichText } from "@/components/aidx/aidx-rich-text";
 import { aidxGet, AidxUnavailableError } from "@/lib/aidx/api";
 import { formatDate } from "@/lib/aidx/format";
 import type { NewsDetail } from "@/lib/aidx/types";
@@ -63,16 +64,8 @@ export default async function NewsItemPage({ params }: Props) {
         ) : null}
       </PageHeader>
 
-      <article className="container-page max-w-3xl space-y-5 py-12">
-        {item.body
-          .split(/\n\s*\n/)
-          .map((block) => block.trim())
-          .filter(Boolean)
-          .map((block, index) => (
-            <p key={index} className="text-body-lg leading-relaxed text-foreground-secondary">
-              {block}
-            </p>
-          ))}
+      <article className="container-page max-w-3xl py-12">
+        <AidxRichText text={item.body} className="space-y-5" proseClassName="text-body-lg leading-relaxed text-foreground-secondary" />
       </article>
     </>
   );

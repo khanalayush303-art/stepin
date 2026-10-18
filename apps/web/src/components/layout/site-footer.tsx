@@ -39,7 +39,7 @@ export function SiteFooter() {
       <div className="container-page py-12">
         <div className="flex flex-col gap-10 lg:flex-row lg:gap-16">
           <div className="max-w-xs space-y-3">
-            <Logo />
+            <Logo variant="full" imgClassName="h-16 w-auto" />
             <p className="text-small text-muted-foreground">
               Verified employers, transparent stages, and a clear view of where every
               application stands.
@@ -69,7 +69,7 @@ export function SiteFooter() {
 
         <div className="mt-10 flex flex-col gap-2 border-t border-border pt-6 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-caption text-muted-foreground">
-            &copy; {new Date().getFullYear()} StepIn. All rights reserved.
+            &copy; {new Date().getFullYear()} StepIn: The AIDX Experience. All rights reserved.
           </p>
           <p className="text-caption text-muted-foreground">
             WCAG 2.1 AA &middot; Built in Sydney

@@ -7,12 +7,12 @@ import { clerkAppearance } from "@/lib/auth/clerk-appearance";
 
 export const metadata: Metadata = {
   title: {
-    default: "StepIn — Find opportunities. Apply with confidence.",
+    default: "StepIn: The AIDX Experience — Connecting Careers, Research & Innovation",
     template: "%s · StepIn",
   },
   description:
-    "Graduate roles and internships from verified employers, with every stage of your application visible in one place.",
-  applicationName: "StepIn",
+    "Connecting careers, research and innovation: graduate roles and internships from verified employers, plus the AIDX Lab's research, publications and events — all in one place.",
+  applicationName: "StepIn: The AIDX Experience",
 };
 
 export const viewport: Viewport = {

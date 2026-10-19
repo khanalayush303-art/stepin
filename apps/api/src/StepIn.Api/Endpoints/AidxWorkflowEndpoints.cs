@@ -43,6 +43,7 @@ public static class AidxWorkflowEndpoints
         group.MapPost("/claim-ownership", ClaimOwnershipAsync).WithName("AidxClaimOwnership");
         group.MapGet("/revisions", ListRevisionsAsync).WithName("AidxListRevisions");
         group.MapGet("/audit", ListAuditEntriesAsync).WithName("AidxListAuditEntries");
+        group.MapGet("/version", GetCurrentVersionAsync).WithName("AidxCurrentVersion");
 
         return app;
     }
@@ -672,6 +673,52 @@ public static class AidxWorkflowEndpoints
     }
 
     // ---- revision history --------------------------------------------------------------------
+
+    /// <summary>
+    /// Read-only current optimistic-concurrency version — for a caller (owner or reviewer, not
+    /// just the owner) to fetch <c>expectedVersion</c> immediately before a workflow transition,
+    /// without the side effects or owner-only restriction of <see cref="BeginEditAsync"/>.
+    ///
+    /// <see cref="BeginEditAsync"/> ("/begin-edit") is a Contributor-only action that may open a
+    /// new revision as a side effect and is gated to the content's owner (or Admin) — wrong on
+    /// both counts for a reviewer who needs the version before approving or requesting changes on
+    /// someone else's submission, and it 404s on an in-progress revision row since it only
+    /// resolves canonical (<c>RevisionOfId == null</c>) rows. This endpoint mirrors
+    /// <see cref="ListAuditEntriesAsync"/>'s permission and lookup pattern instead (owner or
+    /// <see cref="CanReview"/>, loaded by the row's own id via <see cref="LoadByIdAsync"/>, so it
+    /// works for a revision row too), and never mutates anything.
+    /// </summary>
+    private static async Task<IResult> GetCurrentVersionAsync(
+        string contentType, Guid id, ClaimsPrincipal principal, ApplicationDbContext db,
+        AidxContentEditingService editing, CancellationToken cancellationToken)
+    {
+        if (!TryParseContentType(contentType, out var type))
+        {
+            return Results.NotFound();
+        }
+
+        var (user, membership, failure) = await ResolveActorAsync(principal, db, cancellationToken);
+        if (failure is not null)
+        {
+            return failure;
+        }
+
+        var content = await LoadByIdAsync(type, id, db, cancellationToken);
+        if (content is null)
+        {
+            return Results.NotFound();
+        }
+
+        var canonicalId = content.RevisionOfId ?? content.Id;
+        var areaIds = await GetContentAreaIdsAsync(type, canonicalId, db, cancellationToken);
+        var isOwner = AidxPermissions.CanEditAsOwner(membership, content.CreatedByMembershipId);
+        if (!isOwner && !CanReview(user!, membership, content, areaIds))
+        {
+            return Results.Forbid();
+        }
+
+        return Results.Ok(new AidxVersionResponse(editing.GetVersion(content)));
+    }
 
     private static async Task<IResult> ListRevisionsAsync(
         string contentType, Guid id, ClaimsPrincipal principal, ApplicationDbContext db, CancellationToken cancellationToken)

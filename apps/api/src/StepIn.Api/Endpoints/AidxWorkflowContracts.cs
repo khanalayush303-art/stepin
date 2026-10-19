@@ -6,6 +6,8 @@ public sealed record AidxRequestChangesRequest(string ExpectedVersion, string Co
 
 public sealed record AidxWorkflowStatusResponse(Guid Id, string Status, string Version, Guid? RevisionOfId, int RevisionNumber);
 
+public sealed record AidxVersionResponse(string Version);
+
 public sealed record AidxRevisionSummaryResponse(
     Guid Id, int RevisionNumber, string Status, DateTimeOffset? MergedAt, DateTimeOffset? DiscardedAt);
 

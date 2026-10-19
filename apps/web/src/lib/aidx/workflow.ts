@@ -30,9 +30,12 @@ function base(contentType: AidxWorkflowContentType, id: string) {
 }
 
 /** The content's current optimistic-concurrency version — fetch this immediately before any
- * workflow transition, since the form's own `expectedVersion` can go stale while the page sits open. */
+ * workflow transition, since the form's own `expectedVersion` can go stale while the page sits
+ * open. Read-only and available to the owner or anyone who can review the content (not just the
+ * owner) — unlike `/begin-edit`, which is a Contributor-only action that can open a new revision
+ * as a side effect and is the wrong endpoint for a reviewer or for this read-only purpose. */
 export async function currentVersion(token: string | null, contentType: AidxWorkflowContentType, id: string) {
-  const result = await apiClient.get<{ version: string }>(`${base(contentType, id)}/begin-edit`, token);
+  const result = await apiClient.get<{ version: string }>(`${base(contentType, id)}/version`, token);
   return result.version;
 }
 

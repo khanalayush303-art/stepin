@@ -592,4 +592,171 @@ public sealed class AidxWorkflowEndpointsTests(AuthApiFactory factory) : IClassF
         var revisionSlug = await db.AidxProjects.Where(p => p.Id == editable.Id).Select(p => p.Slug).SingleAsync(TestContext.Current.CancellationToken);
         revisionSlug.Should().Be(project.Slug, "the revision was cloned with the same slug, by design");
     }
+
+    // ---- GET .../version — regression coverage for the review-page 405 ----------------------
+    //
+    // Production incident: the review page (and the Contributor's own workspace withdraw action)
+    // fetched "the current version" via GET on /begin-edit, which is POST-only — an immediate 405
+    // on every click. Even with the verb corrected, /begin-edit is gated to the content's owner
+    // (or Admin) and only resolves canonical rows, so a Lab Manager or Editor reviewing someone
+    // else's submission would still have been wrongly refused (403), and would 404 on an
+    // in-progress revision row. These tests exercise the actual reviewer-click flow end to end
+    // (GET the version, then POST the action with it) exactly as the frontend now does, not just
+    // the new endpoint in isolation.
+
+    [Fact]
+    public async Task A_reviewer_who_is_not_the_owner_can_fetch_the_current_version_and_use_it_to_approve()
+    {
+        var (contributorToken, contributorUserId) = await NewUserAsync();
+        var contributorMembership = await GrantAsync(contributorUserId, AidxLabRole.Contributor);
+        var (editorToken, editorUserId) = await NewUserAsync();
+        await GrantAsync(editorUserId, AidxLabRole.Editor);
+
+        var project = await CreateDraftProjectAsync(contributorMembership.Id);
+        var v0 = await CurrentVersionAsync(project.Id);
+        await SendAsync(HttpMethod.Post, $"/api/v1/aidx/content/project/{project.Id}/submit", contributorToken, new AidxWorkflowActionRequest(v0));
+
+        // The exact sequence the review page performs: GET the version, then POST the action —
+        // reproducing the originally-reported click, not a hand-fetched version from the DB.
+        var versionResponse = await SendAsync(HttpMethod.Get, $"/api/v1/aidx/content/project/{project.Id}/version", editorToken);
+        versionResponse.StatusCode.Should().Be(HttpStatusCode.OK, "a reviewer who is not the owner must be able to read the current version — this is what 405'd in production");
+        var versionBody = await versionResponse.Content.ReadFromJsonAsync<AidxVersionResponse>(TestContext.Current.CancellationToken);
+
+        var approve = await SendAsync(HttpMethod.Post, $"/api/v1/aidx/content/project/{project.Id}/approve", editorToken,
+            new AidxWorkflowActionRequest(versionBody!.Version));
+        approve.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        (await ReloadProjectAsync(project.Id)).Status.Should().Be(AidxContentStatus.Published);
+    }
+
+    [Fact]
+    public async Task A_reviewer_who_is_not_the_owner_can_fetch_the_version_and_use_it_to_request_changes()
+    {
+        var (contributorToken, contributorUserId) = await NewUserAsync();
+        var contributorMembership = await GrantAsync(contributorUserId, AidxLabRole.Contributor);
+        var (editorToken, editorUserId) = await NewUserAsync();
+        await GrantAsync(editorUserId, AidxLabRole.Editor);
+
+        var project = await CreateDraftProjectAsync(contributorMembership.Id);
+        var v0 = await CurrentVersionAsync(project.Id);
+        await SendAsync(HttpMethod.Post, $"/api/v1/aidx/content/project/{project.Id}/submit", contributorToken, new AidxWorkflowActionRequest(v0));
+
+        var versionResponse = await SendAsync(HttpMethod.Get, $"/api/v1/aidx/content/project/{project.Id}/version", editorToken);
+        versionResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var versionBody = await versionResponse.Content.ReadFromJsonAsync<AidxVersionResponse>(TestContext.Current.CancellationToken);
+
+        var requestChanges = await SendAsync(HttpMethod.Post, $"/api/v1/aidx/content/project/{project.Id}/request-changes", editorToken,
+            new AidxRequestChangesRequest(versionBody!.Version, "Please add more detail."));
+        requestChanges.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        (await ReloadProjectAsync(project.Id)).Status.Should().Be(AidxContentStatus.ChangesRequested);
+    }
+
+    [Fact]
+    public async Task The_owner_can_also_fetch_the_current_version_and_use_it_to_withdraw()
+    {
+        var (contributorToken, contributorUserId) = await NewUserAsync();
+        var contributorMembership = await GrantAsync(contributorUserId, AidxLabRole.Contributor);
+
+        var project = await CreateDraftProjectAsync(contributorMembership.Id);
+        var v0 = await CurrentVersionAsync(project.Id);
+        await SendAsync(HttpMethod.Post, $"/api/v1/aidx/content/project/{project.Id}/submit", contributorToken, new AidxWorkflowActionRequest(v0));
+
+        // The same flow the Contributor's own /aidx/workspace "Withdraw" button performs.
+        var versionResponse = await SendAsync(HttpMethod.Get, $"/api/v1/aidx/content/project/{project.Id}/version", contributorToken);
+        versionResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var versionBody = await versionResponse.Content.ReadFromJsonAsync<AidxVersionResponse>(TestContext.Current.CancellationToken);
+
+        var withdraw = await SendAsync(HttpMethod.Post, $"/api/v1/aidx/content/project/{project.Id}/withdraw", contributorToken,
+            new AidxWorkflowActionRequest(versionBody!.Version));
+        withdraw.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        (await ReloadProjectAsync(project.Id)).Status.Should().Be(AidxContentStatus.Draft);
+    }
+
+    [Fact]
+    public async Task Fetching_the_version_works_on_an_in_progress_revision_row_unlike_begin_edit()
+    {
+        var (contributorToken, contributorUserId) = await NewUserAsync();
+        var contributorMembership = await GrantAsync(contributorUserId, AidxLabRole.Contributor);
+        var (editorToken, editorUserId) = await NewUserAsync();
+        await GrantAsync(editorUserId, AidxLabRole.Editor);
+
+        var project = await CreateDraftProjectAsync(contributorMembership.Id);
+        var v0 = await CurrentVersionAsync(project.Id);
+        await SendAsync(HttpMethod.Post, $"/api/v1/aidx/content/project/{project.Id}/submit", contributorToken, new AidxWorkflowActionRequest(v0));
+        var v1 = await CurrentVersionAsync(project.Id);
+        await SendAsync(HttpMethod.Post, $"/api/v1/aidx/content/project/{project.Id}/approve", editorToken, new AidxWorkflowActionRequest(v1));
+
+        // Opens a revision — begin-edit only resolves canonical (RevisionOfId == null) rows, so a
+        // /version lookup on the revision's own id must still succeed where /begin-edit would 404.
+        var beginEdit = await SendAsync(HttpMethod.Post, $"/api/v1/aidx/content/project/{project.Id}/begin-edit", contributorToken);
+        var editable = await beginEdit.Content.ReadFromJsonAsync<AidxWorkflowStatusResponse>(TestContext.Current.CancellationToken);
+
+        var revisionVersion = await SendAsync(HttpMethod.Get, $"/api/v1/aidx/content/project/{editable!.Id}/version", editorToken);
+        revisionVersion.StatusCode.Should().Be(HttpStatusCode.OK, "a reviewer must be able to read an in-progress revision's version, not just a canonical row's");
+        var revisionVersionBody = await revisionVersion.Content.ReadFromJsonAsync<AidxVersionResponse>(TestContext.Current.CancellationToken);
+        revisionVersionBody!.Version.Should().Be(editable.Version, "must match the same xmin the begin-edit response itself just reported");
+    }
+
+    [Fact]
+    public async Task A_contributor_who_is_neither_the_owner_nor_a_reviewer_cannot_fetch_the_version()
+    {
+        var (contributorToken, contributorUserId) = await NewUserAsync();
+        var contributorMembership = await GrantAsync(contributorUserId, AidxLabRole.Contributor);
+        var (otherContributorToken, otherContributorUserId) = await NewUserAsync();
+        await GrantAsync(otherContributorUserId, AidxLabRole.Contributor);
+
+        var project = await CreateDraftProjectAsync(contributorMembership.Id);
+        var v0 = await CurrentVersionAsync(project.Id);
+        await SendAsync(HttpMethod.Post, $"/api/v1/aidx/content/project/{project.Id}/submit", contributorToken, new AidxWorkflowActionRequest(v0));
+
+        // A Contributor role can never review (AidxWorkflowEndpoints.CanReview excludes it
+        // outright), and this account isn't the owner either.
+        (await SendAsync(HttpMethod.Get, $"/api/v1/aidx/content/project/{project.Id}/version", otherContributorToken))
+            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task A_scoped_editor_outside_the_projects_research_areas_cannot_fetch_the_version()
+    {
+        var (contributorToken, contributorUserId) = await NewUserAsync();
+        var contributorMembership = await GrantAsync(contributorUserId, AidxLabRole.Contributor);
+        var inScopeArea = await CreateResearchAreaAsync();
+        var outOfScopeArea = await CreateResearchAreaAsync();
+        var (scopedEditorToken, scopedEditorUserId) = await NewUserAsync();
+        await GrantAsync(scopedEditorUserId, AidxLabRole.Editor, scope: outOfScopeArea);
+
+        var project = await CreateDraftProjectAsync(contributorMembership.Id, researchAreaId: inScopeArea);
+        var v0 = await CurrentVersionAsync(project.Id);
+        await SendAsync(HttpMethod.Post, $"/api/v1/aidx/content/project/{project.Id}/submit", contributorToken, new AidxWorkflowActionRequest(v0));
+
+        (await SendAsync(HttpMethod.Get, $"/api/v1/aidx/content/project/{project.Id}/version", scopedEditorToken))
+            .StatusCode.Should().Be(HttpStatusCode.Forbidden, "a scoped editor outside this project's research areas may not review it, and must not be able to read its version either");
+    }
+
+    [Fact]
+    public async Task Approving_with_a_version_that_went_stale_between_the_fetch_and_the_click_is_still_rejected()
+    {
+        var (contributorToken, contributorUserId) = await NewUserAsync();
+        var contributorMembership = await GrantAsync(contributorUserId, AidxLabRole.Contributor);
+        var (editorToken, editorUserId) = await NewUserAsync();
+        await GrantAsync(editorUserId, AidxLabRole.Editor);
+
+        var project = await CreateDraftProjectAsync(contributorMembership.Id);
+        var v0 = await CurrentVersionAsync(project.Id);
+        await SendAsync(HttpMethod.Post, $"/api/v1/aidx/content/project/{project.Id}/submit", contributorToken, new AidxWorkflowActionRequest(v0));
+
+        var staleVersionResponse = await SendAsync(HttpMethod.Get, $"/api/v1/aidx/content/project/{project.Id}/version", editorToken);
+        var staleVersion = (await staleVersionResponse.Content.ReadFromJsonAsync<AidxVersionResponse>(TestContext.Current.CancellationToken))!.Version;
+
+        // Something else changes the row after the version was fetched but before the click lands.
+        var freshVersion = await CurrentVersionAsync(project.Id);
+        await SendAsync(HttpMethod.Post, $"/api/v1/aidx/content/project/{project.Id}/request-changes", editorToken,
+            new AidxRequestChangesRequest(freshVersion, "Changing it out from under the stale read."));
+
+        var approveWithStaleVersion = await SendAsync(HttpMethod.Post, $"/api/v1/aidx/content/project/{project.Id}/approve", editorToken,
+            new AidxWorkflowActionRequest(staleVersion));
+        approveWithStaleVersion.StatusCode.Should().Be(HttpStatusCode.Conflict, "fixing the 405 must not weaken the version-conflict guard — a stale read is still refused");
+    }
 }

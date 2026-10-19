@@ -19,6 +19,14 @@ public sealed class AidxProjectConfiguration : IEntityTypeConfiguration<AidxProj
         builder.Property(p => p.ImageKey).HasMaxLength(500);
         builder.Property(p => p.ImageAltText).HasMaxLength(300);
 
+        // Previously unconfigured, so it silently fell back to the database-wide default string
+        // length (512 — see ApplicationDbContext.ConfigureConventions). Freeform results/impact
+        // text routinely runs longer than that, and nothing validated it before it reached
+        // SaveChangesAsync, so a sufficiently long Outcomes value crashed project creation/editing
+        // with an unhandled Postgres "value too long" error instead of a clean validation message.
+        // Matches Description's cap, consistent with its own "freeform... text" doc comment.
+        builder.Property(p => p.Outcomes).HasMaxLength(20000);
+
         // Only canonical rows (RevisionOfId IS NULL) compete for slug uniqueness — a published
         // row and its in-progress revision never collide, since the revision is excluded.
         builder.HasIndex(p => p.Slug).IsUnique().HasFilter("\"RevisionOfId\" IS NULL");

@@ -443,4 +443,101 @@ public sealed class AidxContentAuthoringEndpointsTests(AuthApiFactory factory) :
         var publicImage = await SendAsync(HttpMethod.Get, $"/api/v1/aidx/media/projects/{created.Id}/image", null);
         publicImage.StatusCode.Should().Be(HttpStatusCode.OK);
     }
+
+    /// <summary>
+    /// Regression test for the production incident on 2026-10-19: creating a project from
+    /// `/aidx/workspace/projects/new` with an Outcomes value longer than 512 characters produced an
+    /// unhandled <c>DbUpdateException</c> (Postgres 22001, "value too long for type character
+    /// varying(512)") because <see cref="AidxProject.Outcomes"/> was the one AIDX string column
+    /// left unconfigured, silently falling back to <c>ApplicationDbContext</c>'s database-wide
+    /// 512-character default instead of a column width sized for "freeform results/impact text".
+    /// A minimal request (this test's baseline) was never the problem — only a longer Outcomes
+    /// value was. Confirmed from the live Fly.io API logs for the failed request before this fix:
+    /// trace <c>0HNPDK1G0EC1Q</c>, 500 response, exception at
+    /// <c>AidxContentAuthoringEndpoints.CreateProjectAsync</c>.
+    /// </summary>
+    [Fact]
+    public async Task A_minimal_project_with_no_optional_fields_can_be_created()
+    {
+        var (token, userId) = await NewUserAsync();
+        await GrantAsync(userId, AidxLabRole.Contributor);
+
+        var minimal = new AidxProjectRequest(
+            Unique("Minimal Project"), null, "Short.", "Long description.",
+            null, null, null, false, null, null, null, null, null, null);
+
+        var response = await SendAsync(HttpMethod.Post, "/api/v1/aidx/authoring/projects", token, minimal);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        response.StatusCode.Should().Be(HttpStatusCode.Created, body);
+    }
+
+    [Fact]
+    public async Task An_outcomes_value_longer_than_the_old_512_character_ceiling_is_accepted_and_saved()
+    {
+        var (token, userId) = await NewUserAsync();
+        await GrantAsync(userId, AidxLabRole.Contributor);
+
+        // 600 characters — over the old, silently-applied 512-character database default, but
+        // comfortably under the new, explicit 20,000-character column width.
+        var longOutcomes = new string('x', 600);
+        var request = new AidxProjectRequest(
+            Unique("Long Outcomes Project"), null, "Short.", "Long description.",
+            null, null, null, false, null, null, null, null, longOutcomes, null);
+
+        var response = await SendAsync(HttpMethod.Post, "/api/v1/aidx/authoring/projects", token, request);
+        var body = await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken);
+        response.StatusCode.Should().Be(HttpStatusCode.Created, body);
+
+        var created = JsonSerializer.Deserialize<AidxIdResponse>(body, JsonSerializerOptions)!;
+        (await ReloadProjectAsync(created.Id)).Outcomes.Should().Be(longOutcomes);
+    }
+
+    [Fact]
+    public async Task An_outcomes_value_over_the_maximum_length_is_a_clean_validation_error_not_a_server_error()
+    {
+        var (token, userId) = await NewUserAsync();
+        await GrantAsync(userId, AidxLabRole.Contributor);
+
+        var tooLong = new string('x', 20_001);
+        var request = new AidxProjectRequest(
+            Unique("Too Long Outcomes Project"), null, "Short.", "Long description.",
+            null, null, null, false, null, null, null, null, tooLong, null);
+
+        var response = await SendAsync(HttpMethod.Post, "/api/v1/aidx/authoring/projects", token, request);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, "an over-length Outcomes value must be rejected before it ever reaches the database");
+
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        problem.GetProperty("errors").TryGetProperty("outcomes", out _).Should().BeTrue("the field-level error must name the actual offending field, not a generic failure");
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        (await db.AidxProjects.AnyAsync(p => p.Title.StartsWith("Too Long Outcomes Project"), TestContext.Current.CancellationToken))
+            .Should().BeFalse("a rejected validation request must never create a partial row");
+    }
+
+    /// <summary>
+    /// Task requirement: a LabManager acting lab-wide (no <c>ScopedResearchAreaId</c>) must not be
+    /// mistaken for "no membership at all" — both have a null-ish shape in different fields
+    /// (<c>ScopedResearchAreaId</c> vs. the membership row itself), and confusing the two would
+    /// either wrongly block every lab-wide LabManager or wrongly admit an unaffiliated account.
+    /// </summary>
+    [Fact]
+    public async Task A_lab_manager_with_no_scoped_research_area_can_create_content_but_an_account_with_no_membership_at_all_cannot()
+    {
+        var (labManagerToken, labManagerUserId) = await NewUserAsync();
+        var labManagerMembership = await GrantAsync(labManagerUserId, AidxLabRole.LabManager);
+        labManagerMembership.ScopedResearchAreaId.Should().BeNull("lab-wide, not scoped to one research area — this is the case that must not be confused with having no membership");
+
+        var (noMembershipToken, _) = await NewUserAsync();
+
+        var labManagerResponse = await SendAsync(HttpMethod.Post, "/api/v1/aidx/authoring/projects", labManagerToken,
+            ProjectRequest(Unique("Lab Manager Project")));
+        labManagerResponse.StatusCode.Should().Be(HttpStatusCode.Created, "an unscoped LabManager membership is still an active membership and must be allowed to create content");
+
+        var noMembershipResponse = await SendAsync(HttpMethod.Post, "/api/v1/aidx/authoring/projects", noMembershipToken,
+            ProjectRequest(Unique("No Membership Project")));
+        noMembershipResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden, "no membership row at all is the actual, distinct case that must be refused");
+    }
+
+    private static readonly JsonSerializerOptions JsonSerializerOptions = new(JsonSerializerDefaults.Web);
 }

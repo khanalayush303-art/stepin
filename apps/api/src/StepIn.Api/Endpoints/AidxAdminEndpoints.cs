@@ -847,6 +847,7 @@ public static class AidxAdminEndpoints
         ValidateText(errors, "description", request.Description, 20000);
         ValidateSlug(errors, request.Slug);
         ValidateOptionalUrl(errors, "externalUrl", request.ExternalUrl);
+        ValidateOptionalText(errors, "outcomes", request.Outcomes, 20000);
 
         if (request.StartDate is { } start && request.EndDate is { } end && end < start)
         {
@@ -1779,6 +1780,18 @@ public static class AidxAdminEndpoints
         if (cleaned is not null && (cleaned.Length > 500 || !AidxEndpointHelpers.IsHttpUrl(cleaned)))
         {
             AidxEndpointHelpers.AddError(errors, key, "Must be an http or https URL of at most 500 characters.");
+        }
+    }
+
+    /// <summary>An optional free-text field — null/blank is fine, only an over-length value is an
+    /// error. Checked against the untrimmed value, matching exactly what gets persisted (the
+    /// authoring/admin write paths do not trim Outcomes), so this can never pass validation and
+    /// still fail at the database on the trimmed-vs-stored length boundary.</summary>
+    private static void ValidateOptionalText(Dictionary<string, string[]> errors, string key, string? value, int maxLength)
+    {
+        if (value is not null && value.Length > maxLength)
+        {
+            AidxEndpointHelpers.AddError(errors, key, $"Must be at most {maxLength} characters.");
         }
     }
 

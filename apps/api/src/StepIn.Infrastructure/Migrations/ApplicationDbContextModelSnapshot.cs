@@ -535,8 +535,8 @@ namespace StepIn.Infrastructure.Migrations
                         .HasColumnType("timestamptz");
 
                     b.Property<string>("Outcomes")
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
+                        .HasMaxLength(20000)
+                        .HasColumnType("character varying(20000)");
 
                     b.Property<DateTimeOffset?>("PublishedAt")
                         .HasColumnType("timestamptz");
